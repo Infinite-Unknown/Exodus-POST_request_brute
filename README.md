@@ -2,6 +2,8 @@
 
 Executable Download: [Exodus (Windows)](https://github.com/Infinite-Unknown/APSpace-Bruteforce/raw/refs/heads/main/Exodus.exe) [ver 1.0] 
 
+<< Tutorial on how to set up below !!! >>
+
 # Exodus
 
 A Python tool designed to bruteforce OTPs (One-Time Passwords).
