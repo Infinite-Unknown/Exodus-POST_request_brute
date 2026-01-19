@@ -1,8 +1,0 @@
-Input/
-build/
-dist/
-__pycache__/
-.conda/
-*.spec
-Assets/
-.gitignore
