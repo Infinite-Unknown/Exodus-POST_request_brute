@@ -10,6 +10,8 @@ Executable Download: [Exodus (Windows)](https://github.com/Infinite-Unknown/APSp
 
 ## Setup Tutorial & Usage
 
+Youtube: [APSPACE_BRUTE_TUTORIAL](https://youtu.be/P1tsijMZ_v0)
+
 To use this tool, you need to provide a valid session in the form of a cURL command. Follow these steps to obtain it:
 
 1.  **Trigger a Failed OTP Request:**
