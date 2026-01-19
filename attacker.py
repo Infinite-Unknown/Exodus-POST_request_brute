@@ -78,7 +78,11 @@ def load_config():
         except Exception as e:
             print(font(f" [Config] Error reading Input/temp.txt: {e}", color="red"))
     else:
-        print(font(" [Config] Input/temp.txt not found. Using hardcoded defaults.", color="yellow"))
+        print(font(" [Config] Input/temp.txt not found.", color="red"))
+        print(font(" [Config] Please configure the request in the main menu.", color="yellow"))
+        return False
+        
+    return True
 
 import concurrent.futures
 
@@ -95,7 +99,9 @@ def check_otp(otp):
         return None, e
 
 def start():
-    load_config()
+    if not load_config():
+        input(" Press Enter to return to menu...")
+        return
     # Prompt for cooldown
     try:
         cooldown_input = input(" Enter cooldown in seconds (default 1.0): ")
@@ -166,7 +172,9 @@ def start():
     input(" Press Enter to return to menu...")
 
 def start_experimental():
-    load_config()
+    if not load_config():
+        input(" Press Enter to return to menu...")
+        return
     """Multi-threaded experimental bruteforce mode"""
     
     # Prompt for thread count
@@ -294,7 +302,9 @@ def start_experimental():
     input("\n Press Enter to return to menu...")
 
 def test_connection():
-    load_config()
+    if not load_config():
+        input(" Press Enter to return to menu...")
+        return
     print(font("\n Testing Connection...", color="yellow", inverse=True))
     
     otp = input(" Enter OTP to test (3 digits): ")
