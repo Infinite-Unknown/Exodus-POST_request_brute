@@ -2,11 +2,17 @@
 
 A Python tool designed to bruteforce OTPs (One-Time Passwords).
 
-## Description
+## Release
 
-    Exodus is a multi-threaded application that attempts to guess OTPs by iterating through possible combinations. It includes a GUI for monitoring progress and supports pausing/resuming.
+Executable Download: [Exodus (Windows)](https://github.com/Infinite-Unknown/APSpace-Bruteforce/raw/refs/heads/main/Exodus.exe) [ver 1.0] 
 
-## Configuration & Usage
+Q / ESC to emergency stop all process
+
+<< Tutorial on how to set up below !!! >>
+
+## Setup Tutorial & Usage
+
+Youtube: [APSPACE_BRUTE_TUTORIAL](https://youtu.be/P1tsijMZ_v0)
 
 To use this tool, you need to provide a valid session in the form of a cURL command. Follow these steps to obtain it:
 
@@ -32,3 +38,5 @@ To use this tool, you need to provide a valid session in the form of a cURL comm
 ## Disclaimer
 
 This tool is for educational purposes only. Unauthorized use against systems you do not own or have check permission to test is illegal.
+
+I will not take any responsibility for any form of abuse or account banned.
