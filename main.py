@@ -22,7 +22,7 @@ def main_menu():
             "5. Configure Main Attack Request (cURL) [Bash]",
             "6. Add/Manage Multiple cURL Requests",
             "7. Exit"
-        ], delay=0.05, symbol="█")
+        ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
 
         if choice == "1":
