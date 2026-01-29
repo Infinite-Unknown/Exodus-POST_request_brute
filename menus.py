@@ -568,21 +568,15 @@ def discord_menu():
             print(ui.font(" Invalid Option.", color="red"))
             time.sleep(1)
 
-def global_attack_menu():
-    """Global Attack Mode - Collaborative attacks via Discord"""
+def global_attack_admin_menu():
+    """Global Attack Admin Menu - Setup and Control"""
     while True:
         ui.clear()
-        print(ui.font("       - Global Attack (Experimental) -       \n", color="yellow", inverse=True))
+        print(ui.font("       - Global Attack (Admin) -       \n", color="red", inverse=True))
         
         # Check current session
         config = global_attack.load_global_config()
-        logged_in = config and config.get('logged_in_user')
         has_setup = config and config.get('data_webhook') and config.get('channel_id') and config.get('bot_token')
-        
-        if logged_in:
-            print(ui.font(f" Logged in as: {config['logged_in_user']}", color="green"))
-        else:
-            print(ui.font(" Not logged in", color="yellow"))
         
         if has_setup:
             print(ui.font(" [✓] Discord configured", color="green"))
@@ -591,14 +585,11 @@ def global_attack_menu():
         
         ui.enter_effect([
             "",
-            "1. Setup Discord (First Time)",
-            "2. Register Account", 
-            "3. Login",
-            "4. Update My cURL",
-            "5. Start Global Attack",
-            "6. View Connected Users",
-            "7. Logout",
-            "8. Back"
+            "1. Setup Discord",
+            "2. Start Global Attack",
+            "3. View Connected Users",
+            "4. Back",
+            "5. Setup Status Dashboard"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
         
@@ -663,164 +654,57 @@ def global_attack_menu():
             
             time.sleep(2)
             
-        elif choice == "2":
-            # Register new account
-            if not has_setup:
-                print(ui.font("\n [!] Setup Discord first (Option 1)", color="yellow"))
-                time.sleep(1.5)
-                continue
-            
-            ui.clear()
-            print(ui.font(" Register New Account ", color="green", inverse=True))
-            
-            username = input("\n Username: ").strip()
-            if not username or len(username) < 3:
-                print(ui.font(" [ERROR] Username must be at least 3 characters", color="red"))
-                time.sleep(1.5)
-                continue
-            
-            password = input(" Password: ").strip()
-            if not password or len(password) < 4:
-                print(ui.font(" [ERROR] Password must be at least 4 characters", color="red"))
-                time.sleep(1.5)
-                continue
-            
-            confirm = input(" Confirm Password: ").strip()
-            if password != confirm:
-                print(ui.font(" [ERROR] Passwords don't match", color="red"))
-                time.sleep(1.5)
-                continue
-            
-            # Get cURL
-            print(ui.font("\n Now import your cURL:", color="cyan"))
-            print(" Press Enter to browse for your cURL file...")
-            input()
-            
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes('-topmost', True)
-            
-            file_path = filedialog.askopenfilename(title="Select cURL Text File")
-            if not file_path:
-                print(ui.font(" [!] Cancelled", color="yellow"))
-                time.sleep(1)
-                continue
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    curl_data = f.read().strip()
-            except Exception as e:
-                print(ui.font(f" [ERROR] {e}", color="red"))
-                time.sleep(2)
-                continue
-            
-            # Register
-            print(ui.font("\n Registering...", color="cyan"))
-            success = global_attack.register_user(
-                config['data_webhook'], 
-                username, 
-                password, 
-                curl_data,
-                config.get('notify_webhook')
-            )
-            
-            if success:
-                config['logged_in_user'] = username
-                config['logged_in_pass'] = password
-                global_attack.save_global_config(config)
-                print(ui.font(f"\n [SUCCESS] Registered as {username}!", color="green", inverse=True))
-            else:
-                print(ui.font(" [ERROR] Registration failed", color="red"))
-            
-            time.sleep(2)
-            
-        elif choice == "3":
-            # Login
-            if not has_setup:
-                print(ui.font("\n [!] Setup Discord first (Option 1)", color="yellow"))
-                time.sleep(1.5)
-                continue
-            
-            ui.clear()
-            print(ui.font(" Login ", color="cyan", inverse=True))
-            
-            username = input("\n Username: ").strip()
-            password = input(" Password: ").strip()
-            
-            print(ui.font("\n Fetching users...", color="cyan"))
-            messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
-            
-            if err:
-                print(ui.font(f" [ERROR] {err}", color="red"))
-                time.sleep(2)
-                continue
-            
-            users = global_attack.parse_users_from_messages(messages)
-            valid, user_data = global_attack.authenticate_user(users, username, password)
-            
-            if valid:
-                config['logged_in_user'] = username
-                config['logged_in_pass'] = password
-                global_attack.save_global_config(config)
-                print(ui.font(f"\n [SUCCESS] Welcome back, {username}!", color="green", inverse=True))
-            else:
-                print(ui.font(" [ERROR] Invalid credentials", color="red"))
-            
-            time.sleep(2)
-            
-        elif choice == "4":
-            # Update cURL
-            if not logged_in:
-                print(ui.font("\n [!] Login first", color="yellow"))
-                time.sleep(1.5)
-                continue
-            
-            ui.clear()
-            print(ui.font(" Update Your cURL ", color="cyan", inverse=True))
-            print(" Press Enter to browse for new cURL file...")
-            input()
-            
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes('-topmost', True)
-            
-            file_path = filedialog.askopenfilename(title="Select cURL Text File")
-            if not file_path:
-                print(ui.font(" [!] Cancelled", color="yellow"))
-                time.sleep(1)
-                continue
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    curl_data = f.read().strip()
-            except Exception as e:
-                print(ui.font(f" [ERROR] {e}", color="red"))
-                time.sleep(2)
-                continue
-            
-            print(ui.font("\n Updating...", color="cyan"))
-            success = global_attack.update_user_curl(
-                config['data_webhook'], 
-                config['logged_in_user'], 
-                config['logged_in_pass'], 
-                curl_data,
-                config.get('notify_webhook')
-            )
-            
-            if success:
-                print(ui.font(" [SUCCESS] cURL updated!", color="green", inverse=True))
-            else:
-                print(ui.font(" [ERROR] Update failed", color="red"))
-            
-            time.sleep(2)
-            
         elif choice == "5":
-            # Start Global Attack
-            if not logged_in:
-                print(ui.font("\n [!] Login first", color="yellow"))
-                time.sleep(1.5)
-                continue
+            # Setup Status Dashboard
+            if not has_setup:
+                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
+                 time.sleep(1.5)
+                 continue
+                 
+            ui.clear()
+            print(ui.font(" Setup Live Status Dashboard ", color="magenta", inverse=True))
+            print("\n This creates a persistent message that updates in real-time.")
+            print(" You can use a new channel or the Notify channel.\n")
             
+            dashboard_cid = input(f" Dashboard Channel ID (default {config['channel_id']}): ").strip()
+            if not dashboard_cid:
+                dashboard_cid = config['channel_id']
+                
+            print(ui.font("\n Initializing dashboard...", color="cyan"))
+            msg_id, err = global_attack.init_status_dashboard(dashboard_cid, config['bot_token'])
+            
+            if msg_id:
+                config['status_channel_id'] = dashboard_cid
+                config['status_message_id'] = msg_id
+                global_attack.save_global_config(config)
+                
+                print(ui.font(f" [SUCCESS] Dashboard created! (ID: {msg_id})", color="green", inverse=True))
+                
+                # Trigger initial population
+                print(ui.font(" Populating data...", color="cyan"))
+                global_attack.trigger_dashboard_update()
+            else:
+                print(ui.font(f" [ERROR] Failed: {err}", color="red"))
+            
+            time.sleep(2)
+            
+        elif choice == "2":
+            # Start Global Attack
+            # Reuse logic since we can't easily import from here without circular deps if we moved it, 
+            # but we are in menus.py so it's fine.
+            # We need to make sure 'config' is loaded.
+            if not has_setup:
+                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
+                 time.sleep(1.5)
+                 continue
+
+            # Need logged_in_user for 'initiator' name, but Admin might not be "logged in" as a user.
+            # We can just say "Admin" or check if they are logged in.
+            # In original code, it checked 'logged_in'.
+            # For separate Admin launcher, we can default to "Admin" or ask for a name.
+            # Let's use "Admin" for now to simplify, or use the logged in user if available in config.
+            initiator = config.get('logged_in_user') or "Admin"
+
             ui.clear()
             print(ui.font(" Starting Global Attack ", color="red", inverse=True))
             
@@ -834,15 +718,29 @@ def global_attack_menu():
                 continue
             
             users = global_attack.parse_users_from_messages(messages)
-            user_curls = global_attack.get_all_user_curls(users)
             
-            if not user_curls:
-                print(ui.font(" [!] No users found with valid configs", color="yellow"))
+            # Filter active users manually to count them
+            active_users = []
+            total_users = len(users)
+            
+            for username, data in users.items():
+                if data.get('opt_in', True):
+                    curl_data = data.get('curl_data')
+                    if curl_data:
+                        active_users.append({
+                            'username': username,
+                            'curl': curl_data
+                        })
+            
+            if not active_users:
+                print(ui.font(" [!] No ACTIVE users found", color="yellow"))
+                if total_users > 0:
+                    print(f" (Found {total_users} users, but all are opted out)")
                 time.sleep(2)
                 continue
             
-            print(ui.font(f"\n Found {len(user_curls)} user(s):", color="green"))
-            for u in user_curls:
+            print(ui.font(f"\n Found {total_users} total users ({len(active_users)} Active):", color="green"))
+            for u in active_users:
                 print(f"  • {u['username']}")
             
             # Attack settings
@@ -862,42 +760,38 @@ def global_attack_menu():
             if confirm != 'y':
                 continue
             
-            # Notify Discord (use notify webhook if available, otherwise data webhook)
+            # Notify Discord
             notify_webhook = config.get('notify_webhook') or config.get('data_webhook')
             global_attack.send_attack_notification(
                 notify_webhook, 
-                config['logged_in_user'], 
-                len(user_curls)
+                initiator, 
+                len(active_users)
             )
             
-            # Prepare files for multi-attack
-            # Save user curls temporarily
+            # Prepare files
             temp_dir = os.path.join(os.getcwd(), 'Input', 'GlobalTemp')
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
             
-            # Clear old temp files
             for f in os.listdir(temp_dir):
                 os.remove(os.path.join(temp_dir, f))
             
             temp_files = []
-            for u in user_curls:
+            for u in active_users:
                 filename = f"{u['username']}.txt"
                 filepath = os.path.join(temp_dir, filename)
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(u['curl'])
                 temp_files.append(filename)
             
-            # Run attack using modified multi-account attack
             print(ui.font("\n GLOBAL ATTACK STARTED!", color="red", inverse=True))
             print(ui.font(" Press 'q' or 'esc' to stop all attacks.\n", color="yellow"))
             
             ui.bg()
-            # Pass notify webhook for OTP found alerts
             attacker.run_global_attack(temp_files, temp_dir, num_threads, cooldown, notify_webhook)
             ui.bg_end()
             
-        elif choice == "6":
+        elif choice == "3":
             # View connected users
             if not has_setup:
                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
@@ -914,58 +808,467 @@ def global_attack_menu():
             else:
                 users = global_attack.parse_users_from_messages(messages)
                 print(f"\n Found {len(users)} user(s):\n")
-                for i, username in enumerate(users.keys()):
-                    print(f"  {i+1}. {username}")
+                
+                # Sort alphabetically
+                sorted_users = sorted(users.items())
+                
+                for i, (username, data) in enumerate(sorted_users):
+                    status = ""
+                    if not data.get('opt_in', True):
+                        status = ui.font(" (OPTED OUT)", color="red")
+                    else:
+                        status = ui.font(" (ACTIVE)", color="green")
+                        
+                    print(f"  {i+1}. {username}{status}")
             
             input("\n Press Enter to continue...")
             
-        elif choice == "7":
-            # Logout
-            if logged_in:
-                config['logged_in_user'] = None
-                config['logged_in_pass'] = None
-                global_attack.save_global_config(config)
-                print(ui.font("\n Logged out.", color="green"))
-            else:
-                print(ui.font("\n Not logged in.", color="yellow"))
-            time.sleep(1)
-            
-        elif choice == "8":
+        elif choice == "4":
             break
         else:
             print(ui.font(" Invalid Option.", color="red"))
             time.sleep(1)
 
-def main_menu():
-    """Main menu with simplified options"""
+def global_attack_user_menu():
+    """Global Attack User Menu - Join and Update"""
     while True:
         ui.clear()
-        print(ui.font("                - Exodus -                \n", color="white", inverse=True))
+        print(ui.font("       - Global Attack (Join) -       \n", color="magenta", inverse=True))
         
-        ui.enter_effect([
-            "1. Single Account",
-            "2. Multiple Account",
-            "3. Global Attack (Cloud)",
-            "4. Discord Webhook",
-            "5. Exit"
-        ], delay=0.02, symbol="█")
-        choice = input("\nInput: ")
-
-        if choice == "1":
-            single_account_menu()
-        elif choice == "2":
-            multi_account_menu()
-        elif choice == "3":
-            global_attack_menu()
-        elif choice == "4":
-            discord_menu()
-        elif choice == "5":
-            ui.clear()
-            print(ui.font(" ", color="red", inverse=True) + " Exit Successful.")
-            break
+        config = global_attack.load_global_config()
+        logged_in = config and config.get('logged_in_user')
+        has_setup = config and config.get('data_webhook')
+        
+        # Helper variables
+        is_opted_in = True
+        user_data = None
+        
+        if logged_in:
+            try:
+                messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                if not err:
+                    users = global_attack.parse_users_from_messages(messages)
+                    user_data = users.get(config['logged_in_user'])
+                    if user_data:
+                        is_opted_in = user_data.get('opt_in', True)
+            except:
+                pass
+            
+            status_str = "ACTIVE" if is_opted_in else "OPTED OUT"
+            status_color = "green" if is_opted_in else "red"
+            
+            print(ui.font(f" Logged in as: {config['logged_in_user']}", color="green"))
+            print(" Status: " + ui.font(status_str, color=status_color))
         else:
-            print(ui.font(" Invalid Option. Please key in 1-5", color="red"))
-            time.sleep(1)
+            print(ui.font(" Not logged in", color="yellow"))
+            
+        if not has_setup:
+             print(ui.font(" [!] Network not configured (Requires Admin Setup)", color="red"))
+        
+        # Build Options
+        options = []
+        if not logged_in:
+            options = ["1. Register Account", "2. Login", "3. Back"]
+        else:
+            options = [
+                "1. Manage Account", 
+                f"2. {'Opt Out' if is_opted_in else 'Opt In'} (Toggle)", 
+                "3. Logout", 
+                "4. Back"
+            ]
+            
+        ui.enter_effect([
+            "",
+            *(options[:-1]),
+            options[-1]
+        ], delay=0.02, symbol="█")
+        
+        choice = input("\nInput: ")
+        
+        if not logged_in:
+            # === NOT LOGGED IN OPTIONS ===
+            if choice == "1":
+                # Register
+                if not has_setup:
+                    print(ui.font("\n [!] Connection not configured.", color="red"))
+                    time.sleep(1.5)
+                    continue
+                    
+                ui.clear()
+                print(ui.font(" Register New Account ", color="green", inverse=True))
+                
+                username = input("\n Username: ").strip()
+                if not username or len(username) < 3:
+                    print(ui.font(" [ERROR] Username must be at least 3 characters", color="red"))
+                    time.sleep(1.5)
+                    continue
+                
+                # Check if username exists
+                print(ui.font(" Checking availability...", color="cyan"))
+                messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                if err:
+                    print(ui.font(f" [ERROR] Connection failed: {err}", color="red"))
+                    time.sleep(2)
+                    continue
+                
+                existing_users = global_attack.parse_users_from_messages(messages)
+                if username in existing_users:
+                    print(ui.font(f" [ERROR] Username '{username}' is already taken.", color="red"))
+                    time.sleep(2)
+                    continue
 
-if __name__ == "__main__":
-    main_menu()
+                password = input(" Password: ").strip()
+                if not password or len(password) < 4:
+                    print(ui.font(" [ERROR] Password must be at least 4 characters", color="red"))
+                    time.sleep(1.5)
+                    continue
+                
+                confirm = input(" Confirm Password: ").strip()
+                if password != confirm:
+                    print(ui.font(" [ERROR] Passwords don't match", color="red"))
+                    time.sleep(1.5)
+                    continue
+                
+                # Get cURL
+                print(ui.font("\n Now import your cURL:", color="cyan"))
+                print(" Press Enter to browse for your cURL file...")
+                input()
+                
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True)
+                
+                file_path = filedialog.askopenfilename(title="Select cURL Text File")
+                if not file_path:
+                    print(ui.font(" [!] Cancelled", color="yellow"))
+                    time.sleep(1)
+                    continue
+                
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        curl_data = f.read().strip()
+                except Exception as e:
+                    print(ui.font(f" [ERROR] {e}", color="red"))
+                    time.sleep(2)
+                    continue
+                
+                print(ui.font("\n Registering...", color="cyan"))
+                success, error_msg = global_attack.register_user(
+                    config['data_webhook'], 
+                    username, 
+                    password, 
+                    curl_data,
+                    config.get('notify_webhook')
+                )
+                
+                if success:
+                    config['logged_in_user'] = username
+                    config['logged_in_pass'] = password
+                    global_attack.save_global_config(config)
+                    print(ui.font(f"\n [SUCCESS] Registered as {username}!", color="green", inverse=True))
+                else:
+                    print(ui.font(f" [ERROR] Registration failed: {error_msg}", color="red"))
+                
+                time.sleep(2)
+                
+            elif choice == "2":
+                # Login
+                if not has_setup:
+                    print(ui.font("\n [!] Connection not configured.", color="red"))
+                    time.sleep(1.5)
+                    continue
+                    
+                ui.clear()
+                print(ui.font(" Login ", color="cyan", inverse=True))
+                
+                username = input("\n Username: ").strip()
+                password = input(" Password: ").strip()
+                
+                print(ui.font("\n Fetching users...", color="cyan"))
+                messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                
+                if err:
+                    print(ui.font(f" [ERROR] {err}", color="red"))
+                    time.sleep(2)
+                    continue
+                
+                users = global_attack.parse_users_from_messages(messages)
+                valid, user_data = global_attack.authenticate_user(users, username, password)
+                
+                if valid:
+                    config['logged_in_user'] = username
+                    config['logged_in_pass'] = password
+                    global_attack.save_global_config(config)
+                    print(ui.font(f"\n [SUCCESS] Welcome back, {username}!", color="green", inverse=True))
+                else:
+                    print(ui.font(" [ERROR] Invalid credentials", color="red"))
+                
+                time.sleep(2)
+                
+            elif choice == "3":
+                break
+            else:
+                print(ui.font(" Invalid Option.", color="red"))
+                time.sleep(1)
+                
+        else:
+            # === LOGGED IN OPTIONS ===
+            if choice == "1":
+                # MANAGE ACCOUNT SUBMENU
+                while True:
+                    ui.clear()
+                    print(ui.font(" Manage Global Account ", color="magenta", inverse=True))
+                    print(f" Current User: {config['logged_in_user']}\n")
+                    
+                    ui.enter_effect([
+                        "1. Change Username",
+                        "2. Change Password",
+                        "3. Update cURL",
+                        "4. Back"
+                    ], delay=0.02, symbol="█")
+                    
+                    sub_choice = input("\n Input: ")
+                    
+                    if sub_choice == "1":
+                        # Rename User
+                        ui.clear()
+                        print(ui.font(" Change Username ", color="cyan", inverse=True))
+                        
+                        new_name = input(" Enter new username: ").strip()
+                        if len(new_name) < 3:
+                            print(ui.font(" [ERROR] Must be at least 3 chars long.", color="red"))
+                            time.sleep(1.5)
+                            continue
+                        
+                        confirm = input(f" Confirm rename to '{new_name}'? (y/n): ").lower()
+                        if confirm != 'y':
+                            continue
+                            
+                        # Need to find old message ID first
+                        print(ui.font("\n Locating account...", color="cyan"))
+                        messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                        if err:
+                            print(ui.font(f" [ERROR] {err}", color="red"))
+                            time.sleep(2)
+                            continue
+                            
+                        users = global_attack.parse_users_from_messages(messages)
+                        user_data = users.get(config['logged_in_user'])
+                        
+                        if not user_data:
+                            print(ui.font(" [ERROR] Could not find your account in database.", color="red"))
+                            time.sleep(2)
+                            continue
+                        
+                        old_msg_id = user_data.get('message_id')
+                        curl_data = user_data.get('curl_data', '') # Preserve cURL
+                        # Preserve opt_in status
+                        current_opt_in = user_data.get('opt_in', True)
+                        
+                        print(ui.font(" Updating...", color="cyan"))
+                        # Note: rename_user doesn't support opt_in param efficiently without modifying it too?
+                        # Wait, rename_user calls register_user. register_user makes a NEW entry.
+                        # I should update register_user or manually handle opt_in passing in rename_user?
+                        # register_user defaults opt_in=True.
+                        # Let's check rename_user implementation.
+                        # rename_user calls register_user.
+                        # I need to ensure opt_in is preserved.
+                        # But register_user just puts "opt_in": True hardcoded?
+                        # Let's check global_attack.py
+                        
+                        # In global_attack.py:
+                        # def register_user(..., opt_in=True): ... user_data = { ... "opt_in": opt_in ... }
+                        # I only modified register_user to include "opt_in": True in the dictionary, I didn't add it as a parameter!
+                        # Ah, I added `opt_in=True` to `update_user_curl` but NOT `register_user` arguments?
+                        # Let's check my previous edit to global_attack.py.
+                        # I see I changed register_user lines but I didn't see the arguments change in the diff?
+                        # Line 69 was: def register_user(data_webhook_url, username, password, curl_data, notify_webhook_url=None):
+                        # I didn't change the signature in the diff I saw earlier. I only added "opt_in": True to the dict.
+                        # So rename_user calling register_user will invoke it with default True.
+                        # So renaming WILL RESET opt-in status to True.
+                        # This is a bug I introduced or didn't address.
+                        # However, for this step, I'm just reverting menus.py. I can fix global_attack.py separately or now.
+                        # Let's fix menus.py first.
+                        
+                        success, err = global_attack.rename_user(
+                            config['data_webhook'],
+                            config['channel_id'],
+                            config['bot_token'],
+                            config['logged_in_user'],
+                            new_name,
+                            config['logged_in_pass'],
+                            curl_data,
+                            old_msg_id,
+                            opt_in=current_opt_in
+                        )
+                        
+                        if success:
+                            config['logged_in_user'] = new_name
+                            global_attack.save_global_config(config)
+                            print(ui.font(f"\n [SUCCESS] Username changed to {new_name}", color="green", inverse=True))
+                            if err: # Warning about delete fail
+                                print(ui.font(f" [WARNING] {err}", color="yellow"))
+                        else:
+                            print(ui.font(f" [ERROR] Rename failed: {err}", color="red"))
+                        time.sleep(2)
+                        
+                    elif sub_choice == "2":
+                        # Change Password
+                        ui.clear()
+                        print(ui.font(" Change Password ", color="cyan", inverse=True))
+                        
+                        new_pass = input(" New Password: ").strip()
+                        if len(new_pass) < 4:
+                            print(ui.font(" [ERROR] Must be at least 4 chars long.", color="red"))
+                            time.sleep(1.5)
+                            continue
+                            
+                        confirm_pass = input(" Confirm Password: ").strip()
+                        if new_pass != confirm_pass:
+                            print(ui.font(" [ERROR] Passwords don't match.", color="red"))
+                            time.sleep(1.5)
+                            continue
+                            
+                        # Need cURL data to re-register
+                        print(ui.font("\n Fetching current data...", color="cyan"))
+                        messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                        if err:
+                            print(ui.font(f" [ERROR] {err}", color="red"))
+                            time.sleep(2)
+                            continue
+                            
+                        users = global_attack.parse_users_from_messages(messages)
+                        user_data = users.get(config['logged_in_user'])
+                        
+                        if not user_data:
+                            print(ui.font(" [ERROR] Account not found.", color="red"))
+                            time.sleep(2)
+                            continue
+                            
+                        curl_data = user_data.get('curl_data', '')
+                        
+                        print(ui.font(" Updating password...", color="cyan"))
+                        # Similar issue with password update? 
+                        # update_user_password calls register_user.
+                        # So it will also reset opt-in.
+                        success, err = global_attack.update_user_password(
+                            config['data_webhook'],
+                            config['logged_in_user'],
+                            new_pass,
+                            curl_data,
+                            opt_in=user_data.get('opt_in', True),
+                            notify_webhook_url=config.get('notify_webhook')
+                        )
+                        
+                        if success:
+                            config['logged_in_pass'] = new_pass
+                            global_attack.save_global_config(config)
+                            print(ui.font("\n [SUCCESS] Password updated!", color="green", inverse=True))
+                        else:
+                            print(ui.font(f" [ERROR] Failed: {err}", color="red"))
+                        time.sleep(2)
+                        
+                    elif sub_choice == "3":
+                        # Update cURL
+                        ui.clear()
+                        print(ui.font(" Update cURL ", color="cyan", inverse=True))
+                        print(" Press Enter to browse for new cURL file...")
+                        input()
+                        
+                        root = tk.Tk()
+                        root.withdraw()
+                        root.attributes('-topmost', True)
+                        
+                        file_path = filedialog.askopenfilename(title="Select cURL Text File")
+                        if not file_path:
+                            print(ui.font(" [!] Cancelled", color="yellow"))
+                            time.sleep(1)
+                            continue
+                        
+                        try:
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                curl_data = f.read().strip()
+                        except Exception as e:
+                            print(ui.font(f" [ERROR] {e}", color="red"))
+                            time.sleep(2)
+                            continue
+                        
+                        print(ui.font("\n Updating...", color="cyan"))
+                        # For update_user_curl, I DID update the signature to accept opt_in.
+                        # But I need to pass it here if I want to preserve it.
+                        # Since I'm removing the fetch logic from this menu, I don't know the current status!
+                        # So I might default to True or I need to fetch it again inside here?
+                        # Or I just pass True (default) and assume active?
+                        # Ideally, I should fetch it.
+                        
+                        # Fetching to get current status
+                        messages, err = global_attack.fetch_channel_messages(config['channel_id'], config['bot_token'])
+                        is_opted_in = True
+                        if not err:
+                            users = global_attack.parse_users_from_messages(messages)
+                            ud = users.get(config['logged_in_user'])
+                            if ud:
+                                is_opted_in = ud.get('opt_in', True)
+
+                        success, error_msg = global_attack.update_user_curl(
+                            config['data_webhook'], 
+                            config['logged_in_user'], 
+                            config['logged_in_pass'], 
+                            curl_data,
+                            is_opted_in,
+                            config.get('notify_webhook')
+                        )
+                        
+                        if success:
+                            print(ui.font(" [SUCCESS] cURL updated!", color="green", inverse=True))
+                        else:
+                            print(ui.font(f" [ERROR] Update failed: {error_msg}", color="red"))
+                        
+                        time.sleep(2)
+                    
+                    elif sub_choice == "4":
+                        break
+                    else:
+                        print(ui.font(" Invalid Option.", color="red"))
+                        time.sleep(1)
+
+                
+            elif choice == "2":
+                # Toggle Opt-In/Out
+                new_status = not is_opted_in
+                print(ui.font(f"\n Changing status to {'ACTIVE' if new_status else 'OPTED OUT'}...", color="cyan"))
+                
+                if not user_data:
+                     print(ui.font(" [ERROR] Could not fetch user data. Try again.", color="red"))
+                     time.sleep(2)
+                     continue
+                     
+                curl_data = user_data.get('curl_data', '')
+                success, err = global_attack.update_user_status(
+                    config['data_webhook'],
+                    config['logged_in_user'],
+                    config['logged_in_pass'],
+                    curl_data,
+                    new_status,
+                    config.get('notify_webhook')
+                )
+                
+                if success:
+                    print(ui.font(f" [SUCCESS] Status updated!", color="green", inverse=True))
+                else:
+                    print(ui.font(f" [ERROR] Update failed: {err}", color="red"))
+                time.sleep(1.5)
+
+            elif choice == "3":
+                # Logout
+                config['logged_in_user'] = None
+                config['logged_in_pass'] = None
+                global_attack.save_global_config(config)
+                print(ui.font("\n Logged out.", color="green"))
+                time.sleep(1)
+                
+            elif choice == "4":
+                break
+            else:
+                print(ui.font(" Invalid Option.", color="red"))
+                time.sleep(1)

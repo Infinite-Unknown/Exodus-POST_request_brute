@@ -39,7 +39,7 @@ def save_webhook_config(webhook_url):
         json.dump(config, f, indent=2)
     return True
 
-def send_to_discord(webhook_url, content, embed=None):
+def send_to_discord(webhook_url, content, embed=None, files=None):
     """Send a message to Discord webhook"""
     payload = {}
     
@@ -50,10 +50,19 @@ def send_to_discord(webhook_url, content, embed=None):
         payload['embeds'] = [embed]
     
     try:
-        response = requests.post(webhook_url, json=payload)
+        if files:
+            multipart_data = {
+                'payload_json': (None, json.dumps(payload), 'application/json')
+            }
+            multipart_data.update(files)
+            response = requests.post(webhook_url, files=multipart_data)
+        else:
+            response = requests.post(webhook_url, json=payload)
+            
         return response.status_code in [200, 204], response
     except Exception as e:
         return False, str(e)
+
 
 def upload_account_to_discord(webhook_url, account_name, curl_content):
     """
@@ -86,10 +95,14 @@ def upload_account_to_discord(webhook_url, account_name, curl_content):
     success, _ = send_to_discord(webhook_url, None, embed)
     
     if success:
-        # Send the actual data in a code block that's parseable
-        # Using a special marker format: [EXODUS_DATA:account_name]
-        data_message = f"```[EXODUS_DATA:{account_name}]\n{curl_content}\n[/EXODUS_DATA]```"
-        success, response = send_to_discord(webhook_url, data_message)
+        # Send cURL as file attachment
+        files = {
+            'file': (f'{account_name}.txt', curl_content, 'text/plain')
+        }
+        
+        # Use a marker format that includes the file
+        data_message = f"[EXODUS_DATA:{account_name}]"
+        success, response = send_to_discord(webhook_url, data_message, files=files)
         return success
     
     return False
