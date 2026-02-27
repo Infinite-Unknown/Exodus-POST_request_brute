@@ -177,7 +177,8 @@ def single_account_menu():
             "3. Test Connection",
             "4. Setup cURL (Auto-Grab)",
             "5. Setup cURL (Import File)",
-            "6. Back"
+            "",
+            "0. Back"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
         
@@ -216,8 +217,7 @@ def single_account_menu():
             else:
                 print(f"\n [INFO] No configuration found. Please select a file.")
 
-            print(ui.font("\n Press Enter to browse for your cURL text file...", color="green"))
-            input()
+            print(ui.font("\n Opening file browser...", color="green"))
             
             root = tk.Tk()
             root.withdraw()
@@ -247,10 +247,10 @@ def single_account_menu():
             
             time.sleep(2)
             
-        elif choice == "6":
+        elif choice == "0":
             break
         else:
-            print(ui.font(" Invalid Option. Please key in 1-6", color="red"))
+            print(ui.font(" Invalid Option. Please key in 1-5 or 0", color="red"))
             time.sleep(1)
 
 def multi_account_menu():
@@ -271,7 +271,8 @@ def multi_account_menu():
             "",
             "1. Start Attack",
             "2. Manage Accounts",
-            "3. Back"
+            "",
+            "0. Back"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
         
@@ -292,11 +293,11 @@ def multi_account_menu():
             print("\n" + "-"*35)
             print(ui.font(" a. Use ALL accounts", color="cyan"))
             print(ui.font(" s. Select specific accounts", color="yellow"))
-            print(ui.font(" b. Back", color="white"))
+            print(ui.font(" 0. Back", color="white"))
             
             select_choice = input("\n Input: ").strip().lower()
             
-            if select_choice == "b":
+            if select_choice == "0":
                 continue
             elif select_choice == "a":
                 # Use all accounts
@@ -375,13 +376,12 @@ def multi_account_menu():
                 print(" 1. Add Account")
                 print(" 2. Rename Account")
                 print(" 3. Delete Account")
-                print(" 4. Back")
+                print("\n 0. Back")
                 
                 sub_choice = input("\n Input: ")
                 
                 if sub_choice == "1":
-                    print(ui.font("\n Press Enter to browse for cURL file...", color="green"))
-                    input()
+                    print(ui.font("\n Opening file browser...", color="green"))
                     root = tk.Tk()
                     root.withdraw()
                     root.attributes('-topmost', True)
@@ -456,10 +456,10 @@ def multi_account_menu():
                         print(" Invalid input.")
                     time.sleep(1)
                     
-                elif sub_choice == "4":
+                elif sub_choice == "0":
                     break
             
-        elif choice == "3":
+        elif choice == "0":
             break
         else:
             print(ui.font(" Invalid Option. Please key in 1-3", color="red"))
@@ -484,7 +484,8 @@ def discord_menu():
             "2. Test Connection",
             "3. Backup All Accounts",
             "4. Send Test Notification",
-            "5. Back"
+            "",
+            "0. Back"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
         
@@ -562,7 +563,7 @@ def discord_menu():
             
             input("\n Press Enter to continue...")
             
-        elif choice == "5":
+        elif choice == "0":
             break
         else:
             print(ui.font(" Invalid Option.", color="red"))
@@ -582,18 +583,81 @@ def global_attack_admin_menu():
             print(ui.font(" [✓] Discord configured", color="green"))
         else:
             print(ui.font(" [!] Discord not configured", color="yellow"))
-        
         ui.enter_effect([
             "",
             "1. Setup Discord",
             "2. Start Global Attack",
-            "3. View Connected Users",
-            "4. Back",
-            "5. Setup Status Dashboard"
+            "3. Manage Classes",
+            "4. View Connected Users",
+            "5. Setup Status Dashboard",
+            "6. Remote Control (Bot Mode)",
+            "",
+            "0. Back"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
         
-        if choice == "1":
+        if choice == "3":
+            # Manage Classes
+            if not has_setup:
+                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
+                 time.sleep(1.5)
+                 continue
+                 
+            while True:
+                ui.clear()
+                print(ui.font(" Manage Classes ", color="cyan", inverse=True))
+                
+                print(ui.font(" Fetching classes...", color="cyan"))
+                classes, msg_id = global_attack.fetch_classes(config['channel_id'], config['bot_token'])
+                
+                print(f"\n Current Classes: {len(classes)}")
+                if classes:
+                    for i, c in enumerate(classes):
+                        print(f"  {i+1}. {c}")
+                else:
+                    print("  (None)")
+                    
+                print("\n" + "-"*30)
+                print(" 1. Add Class")
+                print(" 2. Delete Class")
+                print("\n 0. Back")
+                
+                sub = input("\n Input: ")
+                
+                if sub == "1":
+                    name = input(" Enter Class Name: ").strip()
+                    if name:
+                        if name in classes:
+                            print(ui.font(" [!] Class already exists", color="yellow"))
+                        else:
+                            classes.append(name)
+                            if global_attack.save_classes(config['channel_id'], config['bot_token'], classes, msg_id):
+                                print(ui.font(f" [SUCCESS] Added {name}", color="green"))
+                            else:
+                                print(ui.font(" [ERROR] Failed to save", color="red"))
+                    time.sleep(1)
+                    
+                elif sub == "2":
+                    if not classes:
+                        continue
+                    try:
+                        idx = int(input(" Delete Number: ")) - 1
+                        if 0 <= idx < len(classes):
+                            removed = classes.pop(idx)
+                            if global_attack.save_classes(config['channel_id'], config['bot_token'], classes, msg_id):
+                                print(ui.font(f" [SUCCESS] Deleted {removed}", color="green"))
+                            else:
+                                print(ui.font(" [ERROR] Failed to save", color="red"))
+                        else:
+                            print(" Invalid number")
+                    except:
+                        pass
+                    time.sleep(1)
+                    
+                elif sub == "0":
+                    break
+        
+        elif choice == "1":
             # Setup Discord bot and webhook
             ui.clear()
             print(ui.font(" Setup Discord Connection ", color="yellow", inverse=True))
@@ -687,6 +751,63 @@ def global_attack_admin_menu():
                 print(ui.font(f" [ERROR] Failed: {err}", color="red"))
             
             time.sleep(2)
+
+        elif choice == "6":
+            # Remote Control (Bot Mode)
+            if not has_setup:
+                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
+                 time.sleep(1.5)
+                 continue
+
+            ui.clear()
+            print(ui.font(" Remote Control (Bot Mode) ", color="magenta", inverse=True))
+            print("\n Setup command control (!start, !stop) via Discord.")
+            print(" You need:")
+            print(" 1. Server (Guild) ID")
+            print(" 2. Admin Role ID (to restrict usage)\n")
+            
+            # Load or ask for Guild/Role/Channel
+            guild_id = config.get('guild_id', '')
+            admin_role_id = config.get('admin_role_id', '')
+            control_channel_id = config.get('control_channel_id', config.get('channel_id'))
+            
+            if not guild_id:
+                guild_id = input(" Enter Guild (Server) ID: ").strip()
+            else:
+                 print(f" Guild ID: {guild_id}")
+                 change = input(" Change? (y/n): ").lower()
+                 if change == 'y':
+                     guild_id = input(" Enter Guild ID: ").strip()
+
+            if not admin_role_id:
+                admin_role_id = input(" Enter Admin Role ID: ").strip()
+            else:
+                 print(f" Role ID: {admin_role_id}")
+                 change = input(" Change? (y/n): ").lower()
+                 if change == 'y':
+                     admin_role_id = input(" Enter Admin Role ID: ").strip()
+                     
+            print(f" Control Channel ID (where you type !start): {control_channel_id}")
+            change = input(" Change? (y/n): ").lower()
+            if change == 'y':
+                 control_channel_id = input(" Enter Control Channel ID: ").strip()
+            
+            if guild_id and admin_role_id and control_channel_id:
+                config['guild_id'] = guild_id
+                config['admin_role_id'] = admin_role_id
+                config['control_channel_id'] = control_channel_id
+                global_attack.save_global_config(config)
+                
+                # Enter Listening Mode
+                global_attack.listen_for_commands(
+                    config['bot_token'], 
+                    control_channel_id, 
+                    guild_id, 
+                    admin_role_id
+                )
+            else:
+                print(ui.font("\n [!] Setup cancelled (missing ID).", color="red"))
+                time.sleep(1.5)
             
         elif choice == "2":
             # Start Global Attack
@@ -698,11 +819,6 @@ def global_attack_admin_menu():
                  time.sleep(1.5)
                  continue
 
-            # Need logged_in_user for 'initiator' name, but Admin might not be "logged in" as a user.
-            # We can just say "Admin" or check if they are logged in.
-            # In original code, it checked 'logged_in'.
-            # For separate Admin launcher, we can default to "Admin" or ask for a name.
-            # Let's use "Admin" for now to simplify, or use the logged in user if available in config.
             initiator = config.get('logged_in_user') or "Admin"
 
             ui.clear()
@@ -719,12 +835,50 @@ def global_attack_admin_menu():
             
             users = global_attack.parse_users_from_messages(messages)
             
+            # Select target
+            ui.clear()
+            print(ui.font(" Target Selection ", color="red", inverse=True))
+            print("\n 1. Attack with ALL Users")
+            print(" 2. Attack with Specific CLASS")
+            print("\n 0. Back")
+            
+            target_choice = input("\n Input: ")
+            
+            if target_choice == "0":
+                continue
+            
+            target_class = None
+            if target_choice == "2":
+                print(ui.font("\n Fetching classes...", color="cyan"))
+                classes, _ = global_attack.fetch_classes(config['channel_id'], config['bot_token'])
+                if not classes:
+                    print(ui.font(" [!] No classes found.", color="yellow"))
+                    time.sleep(2)
+                    continue
+                    
+                print("\n Select Class:")
+                for i, c in enumerate(classes):
+                    print(f"  {i+1}. {c}")
+                try:
+                    c_idx = int(input(" Input: ")) - 1
+                    if 0 <= c_idx < len(classes):
+                        target_class = classes[c_idx]
+                    else:
+                        print(" Invalid.")
+                        continue
+                except:
+                    continue
+            
             # Filter active users manually to count them
             active_users = []
             total_users = len(users)
             
             for username, data in users.items():
                 if data.get('opt_in', True):
+                    # Check class if selected
+                    if target_class and data.get('class_name') != target_class:
+                        continue
+                        
                     curl_data = data.get('curl_data')
                     if curl_data:
                         active_users.append({
@@ -733,13 +887,13 @@ def global_attack_admin_menu():
                         })
             
             if not active_users:
-                print(ui.font(" [!] No ACTIVE users found", color="yellow"))
+                print(ui.font(" [!] No ACTIVE users found for target.", color="yellow"))
                 if total_users > 0:
                     print(f" (Found {total_users} users, but all are opted out)")
                 time.sleep(2)
                 continue
             
-            print(ui.font(f"\n Found {total_users} total users ({len(active_users)} Active):", color="green"))
+            print(ui.font(f"\n Found {len(active_users)} Users ready:", color="green"))
             for u in active_users:
                 print(f"  • {u['username']}")
             
@@ -791,7 +945,7 @@ def global_attack_admin_menu():
             attacker.run_global_attack(temp_files, temp_dir, num_threads, cooldown, notify_webhook)
             ui.bg_end()
             
-        elif choice == "3":
+        elif choice == "4":
             # View connected users
             if not has_setup:
                 print(ui.font("\n [!] Setup Discord first", color="yellow"))
@@ -819,11 +973,13 @@ def global_attack_admin_menu():
                     else:
                         status = ui.font(" (ACTIVE)", color="green")
                         
-                    print(f"  {i+1}. {username}{status}")
+                    class_info = f" [{data.get('class_name')}]" if data.get('class_name') else ""
+                        
+                    print(f"  {i+1}. {username}{class_info}{status}")
             
             input("\n Press Enter to continue...")
             
-        elif choice == "4":
+        elif choice == "0":
             break
         else:
             print(ui.font(" Invalid Option.", color="red"))
@@ -857,7 +1013,9 @@ def global_attack_user_menu():
             status_str = "ACTIVE" if is_opted_in else "OPTED OUT"
             status_color = "green" if is_opted_in else "red"
             
-            print(ui.font(f" Logged in as: {config['logged_in_user']}", color="green"))
+            class_display = f" | Class: {user_data.get('class_name')}" if user_data and user_data.get('class_name') else ""
+            
+            print(ui.font(f" Logged in as: {config['logged_in_user']}", color="green") + class_display)
             print(" Status: " + ui.font(status_str, color=status_color))
         else:
             print(ui.font(" Not logged in", color="yellow"))
@@ -868,13 +1026,19 @@ def global_attack_user_menu():
         # Build Options
         options = []
         if not logged_in:
-            options = ["1. Register Account", "2. Login", "3. Back"]
+            options = ["1. Register Account", "2. Login", "", "0. Back"]
         else:
+            current_class = user_data.get('class_name') if user_data else None
+            class_status = f" [{current_class}]" if current_class else ""
+            
             options = [
                 "1. Manage Account", 
                 f"2. {'Opt Out' if is_opted_in else 'Opt In'} (Toggle)", 
-                "3. Logout", 
-                "4. Back"
+                f"3. Join Class{class_status}",
+                "4. Leave Class",
+                "5. Logout", 
+                "",
+                "0. Back"
             ]
             
         ui.enter_effect([
@@ -931,8 +1095,7 @@ def global_attack_user_menu():
                 
                 # Get cURL
                 print(ui.font("\n Now import your cURL:", color="cyan"))
-                print(" Press Enter to browse for your cURL file...")
-                input()
+                print(ui.font(" Opening file browser...", color="green"))
                 
                 root = tk.Tk()
                 root.withdraw()
@@ -1005,7 +1168,7 @@ def global_attack_user_menu():
                 
                 time.sleep(2)
                 
-            elif choice == "3":
+            elif choice == "0":
                 break
             else:
                 print(ui.font(" Invalid Option.", color="red"))
@@ -1024,7 +1187,8 @@ def global_attack_user_menu():
                         "1. Change Username",
                         "2. Change Password",
                         "3. Update cURL",
-                        "4. Back"
+                        "",
+                        "0. Back"
                     ], delay=0.02, symbol="█")
                     
                     sub_choice = input("\n Input: ")
@@ -1172,8 +1336,7 @@ def global_attack_user_menu():
                         # Update cURL
                         ui.clear()
                         print(ui.font(" Update cURL ", color="cyan", inverse=True))
-                        print(" Press Enter to browse for new cURL file...")
-                        input()
+                        print(ui.font(" Opening file browser...", color="green"))
                         
                         root = tk.Tk()
                         root.withdraw()
@@ -1226,7 +1389,7 @@ def global_attack_user_menu():
                         
                         time.sleep(2)
                     
-                    elif sub_choice == "4":
+                    elif sub_choice == "0":
                         break
                     else:
                         print(ui.font(" Invalid Option.", color="red"))
@@ -1260,6 +1423,95 @@ def global_attack_user_menu():
                 time.sleep(1.5)
 
             elif choice == "3":
+                # Join Class
+                ui.clear()
+                print(ui.font(" Join Class ", color="cyan", inverse=True))
+                
+                print(ui.font("\n Fetching classes...", color="cyan"))
+                classes, _ = global_attack.fetch_classes(config['channel_id'], config['bot_token'])
+                
+                if not classes:
+                    print(ui.font(" [!] No classes available.", color="yellow"))
+                    time.sleep(2)
+                    continue
+                    
+                print(f" Current Class: {user_data.get('class_name') if user_data else 'None'}\n")
+                
+                for i, c in enumerate(classes):
+                    print(f"  {i+1}. {c}")
+                    
+                print("\n 0. Back")
+                
+                sel = input("\n Select Class: ").strip()
+                if sel == '0':
+                    continue
+                    
+                try:
+                    idx = int(sel) - 1
+                    if 0 <= idx < len(classes):
+                        new_class = classes[idx]
+                        if user_data and user_data.get('class_name') == new_class:
+                             print(ui.font(" [!] You are already in this class.", color="yellow"))
+                             time.sleep(1.5)
+                             continue
+                             
+                        print(ui.font(f"\n Joining '{new_class}'...", color="cyan"))
+                        
+                        # Preserve other data
+                        curl_data = user_data.get('curl_data', '')
+                        opt_in = user_data.get('opt_in', True)
+                        
+                        success, err = global_attack.update_user_class(
+                            config['data_webhook'],
+                            config['logged_in_user'],
+                            config['logged_in_pass'],
+                            curl_data,
+                            new_class,
+                            opt_in,
+                            config.get('notify_webhook')
+                        )
+                        
+                        if success:
+                            print(ui.font(f" [SUCCESS] Joined {new_class}!", color="green"))
+                        else:
+                            print(ui.font(f" [ERROR] Failed: {err}", color="red"))
+                    else:
+                        print(" Invalid selection.")
+                except ValueError:
+                    print(" Invalid input.")
+                time.sleep(1.5)
+
+            elif choice == "4":
+                # Leave Class
+                if user_data and not user_data.get('class_name'):
+                     print(ui.font("\n [!] You are not in any class.", color="yellow"))
+                     time.sleep(1.5)
+                     continue
+                     
+                confirm = input(f"\n Leave class '{user_data.get('class_name')}'? (y/n): ").lower()
+                if confirm == 'y':
+                    print(ui.font("\n Leaving class...", color="cyan"))
+                    
+                    curl_data = user_data.get('curl_data', '')
+                    opt_in = user_data.get('opt_in', True)
+                    
+                    success, err = global_attack.update_user_class(
+                        config['data_webhook'],
+                        config['logged_in_user'],
+                        config['logged_in_pass'],
+                        curl_data,
+                        None, # Remove class
+                        opt_in,
+                        config.get('notify_webhook')
+                    )
+                    
+                    if success:
+                        print(ui.font(" [SUCCESS] Left class.", color="green"))
+                    else:
+                        print(ui.font(f" [ERROR] Failed: {err}", color="red"))
+                    time.sleep(1.5)
+
+            elif choice == "5":
                 # Logout
                 config['logged_in_user'] = None
                 config['logged_in_pass'] = None
@@ -1267,7 +1519,7 @@ def global_attack_user_menu():
                 print(ui.font("\n Logged out.", color="green"))
                 time.sleep(1)
                 
-            elif choice == "4":
+            elif choice == "0":
                 break
             else:
                 print(ui.font(" Invalid Option.", color="red"))

