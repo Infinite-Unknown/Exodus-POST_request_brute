@@ -14,13 +14,14 @@ os.system("title Exodus.exe")
 APSPACE_ATTENDIX_URL = "https://apspace.apu.edu.my/attendix/update"
 GRAPHQL_ENDPOINT = "https://attendix.apu.edu.my/graphql"
 
-def auto_grab_curl():
+def auto_grab_curl(save_dest=None, login_data=None, headless=False):
     """
     Automatically captures cURL request using Playwright browser automation.
     Opens browser, user logs in and submits OTP, system captures the request.
     """
-    ui.clear()
-    print(ui.font(" Auto-Grab cURL (Automated) ", color="cyan", inverse=True))
+    if not headless:
+        ui.clear()
+        print(ui.font(" Auto-Grab cURL (Automated) ", color="cyan", inverse=True))
     
     # Check if playwright is available
     try:
@@ -41,8 +42,9 @@ def auto_grab_curl():
             input("\n Press Enter to return to menu...")
             return
     
-    print(ui.font("\n HOW THIS WORKS:", color="yellow", bold=True))
-    print("""
+    if not headless:
+        print(ui.font("\n HOW THIS WORKS:", color="yellow", bold=True))
+        print("""
  1. A browser window will open to APSpace.
  2. Log in with your APU credentials.
  3. Navigate to the Attendix Update page (if not already there).
@@ -53,14 +55,17 @@ def auto_grab_curl():
        We just need to capture the request format.
 """)
     
-    # Always save as single config for simplicity
-    input_dir = os.path.join(os.getcwd(), 'Input')
-    if not os.path.exists(input_dir):
-        os.makedirs(input_dir)
-    save_path = os.path.join(input_dir, 'temp.txt')
+    if save_dest is None:
+        input_dir = os.path.join(os.getcwd(), 'Input')
+        if not os.path.exists(input_dir):
+            os.makedirs(input_dir)
+        save_path = os.path.join(input_dir, 'temp.txt')
+    else:
+        save_path = save_dest
     
-    print(ui.font("\n [*] Opening browser... Please log in and submit an OTP.", color="cyan"))
-    print(ui.font(" [*] The browser will close automatically once captured.", color="cyan"))
+    if not headless:
+        print(ui.font("\n [*] Opening browser... Please log in and submit an OTP.", color="cyan"))
+        print(ui.font(" [*] The browser will close automatically once captured.", color="cyan"))
     
     captured_curl = [None]  # Use list to allow modification in closure
     
@@ -90,9 +95,13 @@ def auto_grab_curl():
             browser = None
             browser_name = None
             
+            
+            # Use headless mode based on param
+            headless_mode = headless
+            
             # Try Chrome first (most common)
             try:
-                browser = p.chromium.launch(headless=False, channel="chrome")
+                browser = p.chromium.launch(headless=headless_mode, channel="chrome")
                 browser_name = "Chrome"
             except Exception:
                 pass
@@ -100,18 +109,20 @@ def auto_grab_curl():
             # Fallback to Edge (comes pre-installed on Windows)
             if browser is None:
                 try:
-                    browser = p.chromium.launch(headless=False, channel="msedge")
+                    browser = p.chromium.launch(headless=headless_mode, channel="msedge")
                     browser_name = "Edge"
                 except Exception:
                     pass
             
             # Last resort: use bundled Chromium
             if browser is None:
-                print(ui.font(" [!] No Chrome/Edge found. Using bundled Chromium...", color="yellow"))
-                browser = p.chromium.launch(headless=False)
+                if not headless:
+                    print(ui.font(" [!] No Chrome/Edge found. Using bundled Chromium...", color="yellow"))
+                browser = p.chromium.launch(headless=headless_mode)
                 browser_name = "Chromium"
             else:
-                print(ui.font(f" [*] Using your installed {browser_name} browser", color="green"))
+                if not headless:
+                    print(ui.font(f" [*] Using your installed {browser_name} browser", color="green"))
             
             context = browser.new_context()
             page = context.new_page()
@@ -123,23 +134,114 @@ def auto_grab_curl():
                     post_data = request.post_data
                     if post_data and "updateAttendance" in post_data:
                         captured_curl[0] = build_curl_from_request(request)
-                        print(ui.font("\n [SUCCESS] cURL request captured!", color="green", inverse=True))
+                        if not headless:
+                            print(ui.font("\n [SUCCESS] cURL request captured!", color="green", inverse=True))
             
             page.on("request", handle_request)
             
-            # Navigate to APSpace
-            page.goto(APSPACE_ATTENDIX_URL)
-            
-            print(ui.font("\n [*] Waiting for you to log in and submit an OTP...", color="yellow"))
-            print(ui.font(" [*] (Browser will auto-close after capture)", color="yellow"))
+            if login_data:
+                email = login_data.get('email')
+                password = login_data.get('password')
+                
+                if not headless:
+                    print(ui.font("\n [*] Automating login sequence...", color="cyan"))
+                
+                # Navigate to APSpace Login
+                page.goto("https://apspace.apu.edu.my/login")
+                
+                # Click the "Log In" button on the APSpace landing page
+                try:
+                    page.wait_for_selector("text=Log In", timeout=10000)
+                    page.locator("text=Log In").first.click()
+                except Exception as e:
+                    if not headless:
+                        print(ui.font(f"\n [ERROR] Could not find the Log In button: {e}", color="red"))
+                    captured_curl[0] = "ERROR"
+                    browser.close()
+                    return
+                
+                # Wait for Microsoft login page
+                try:
+                    # Enter Email
+                    page.wait_for_selector("input[type='email']", timeout=15000)
+                    page.fill("input[type='email']", email)
+                    page.locator("input[type='submit']").first.click()
+                    
+                    # Enter Password
+                    page.wait_for_selector("input[type='password']", timeout=15000)
+                    page.fill("input[type='password']", password)
+                    page.wait_for_timeout(1000)  # brief pause
+                    page.locator("input[type='submit']").first.click()
+                    
+                    # Handle "Stay signed in?" prompt if it appears
+                    try:
+                        page.wait_for_selector("input[id='idBtn_Back']", timeout=5000) # "No" button
+                        page.locator("input[id='idBtn_Back']").first.click()
+                    except:
+                        pass # Ignore if it doesn't appear
+                        
+                    if not headless:
+                        print(ui.font(" [*] Login successful. Navigating to Attendix...", color="green"))
+                        
+                except Exception as e:
+                    if not headless:
+                        print(ui.font(f"\n [ERROR] Automated login failed: {e}", color="red"))
+                    captured_curl[0] = "ERROR"
+                    browser.close()
+                    return
+
+                # Navigate to Attendix Update
+                page.goto(APSPACE_ATTENDIX_URL)
+                
+                # Inject a dummy OTP (000)
+                try:
+                    if not headless:
+                        print(ui.font(" [*] Injecting OTP '000' and capturing request...", color="cyan"))
+                        
+                    # Wait for the OTP input fields to appear
+                    page.wait_for_selector("input", timeout=15000)
+                    page.wait_for_timeout(2000) # Give page time to fully initialize inputs
+                    
+                    # There are 3 inputs for the OTP. We fill them all with '0' and press Enter.
+                    inputs = page.locator("input").element_handles()
+                    if len(inputs) >= 3:
+                        for i in range(3):
+                            inputs[i].fill("0")
+                            
+                        # Press enter instantly on the last input to trigger verification
+                        inputs[2].press("Enter")
+                        
+                except Exception as e:
+                    if not headless:
+                        print(ui.font(f"\n [ERROR] OTP injection failed: {e}", color="red"))
+                    captured_curl[0] = "ERROR"
+                    browser.close()
+                    return
+                    
+            else:
+                # Manual Flow
+                # Navigate to APSpace
+                page.goto(APSPACE_ATTENDIX_URL)
+                
+                print(ui.font("\n [*] Waiting for you to log in and submit an OTP...", color="yellow"))
+                print(ui.font(" [*] (Browser will auto-close after capture)", color="yellow"))
             
             # Wait until we capture the request or user closes browser
+            timeout_counter = 0
             while captured_curl[0] is None:
                 try:
                     page.wait_for_timeout(500)  # Check every 500ms
+                    timeout_counter += 1
+                    # 60 second timeout for automated headless to prevent hanging
+                    if headless and timeout_counter > 120:
+                        captured_curl[0] = "ERROR"
+                        break
                 except:
                     break  # Browser was closed
             
+            if captured_curl[0] == "ERROR":
+                captured_curl[0] = None # Reset so it doesn't save "ERROR"
+                
             browser.close()
             
     except Exception as e:
@@ -153,17 +255,22 @@ def auto_grab_curl():
             with open(save_path, 'w', encoding='utf-8') as f:
                 f.write(captured_curl[0])
             
-            print(ui.font(f"\n [SUCCESS] cURL saved to: {save_path}", color="green", inverse=True))
-            print(ui.font(" You can now use the bruteforce options!", color="cyan"))
+            
+            if not headless:
+                print(ui.font(f"\n [SUCCESS] cURL saved to: {save_path}", color="green", inverse=True))
+                print(ui.font(" You can now use the bruteforce options!", color="cyan"))
         except Exception as e:
-            print(ui.font(f"\n [ERROR] Failed to save: {e}", color="red"))
-            print(ui.font("\n Captured cURL (copy manually if needed):", color="yellow"))
-            print(captured_curl[0])
+            if not headless:
+                print(ui.font(f"\n [ERROR] Failed to save: {e}", color="red"))
+                print(ui.font("\n Captured cURL (copy manually if needed):", color="yellow"))
+                print(captured_curl[0])
     else:
-        print(ui.font("\n [!] No request was captured.", color="yellow"))
-        print(ui.font(" Make sure you submitted an OTP on the Attendix page.", color="white"))
+        if not headless:
+            print(ui.font("\n [!] No request was captured.", color="yellow"))
+            print(ui.font(" Make sure you submitted an OTP on the Attendix page.", color="white"))
     
-    input("\n Press Enter to return to menu...")
+    if not headless:
+        input("\n Press Enter to return to menu...")
 
 def single_account_menu():
     """Single Account submenu - attack and setup for single user"""
@@ -373,14 +480,59 @@ def multi_account_menu():
                         print(f"  {i+1}. {os.path.splitext(f)[0]}")
                         
                 print("\n" + "-"*30)
-                print(" 1. Add Account")
-                print(" 2. Rename Account")
-                print(" 3. Delete Account")
+                print(" 1. Add Account (Auto-Grab)")
+                print(" 2. Add Account (Import File)")
+                print(" 3. Rename Account")
+                print(" 4. Delete Account")
+                print(" 5. Manage Login Details")
                 print("\n 0. Back")
                 
                 sub_choice = input("\n Input: ")
                 
                 if sub_choice == "1":
+                    dest_name = input(" Enter new account name: ").strip()
+                    if not dest_name:
+                        print(ui.font(" Invalid name.", color="red"))
+                        time.sleep(1)
+                        continue
+                    
+                    if not dest_name.endswith(".txt"):
+                        dest_name += ".txt"
+                    
+                    dest_path = os.path.join(saved_dir, dest_name)
+                    
+                    # Ask for login details
+                    print(ui.font("\n Setup Auto-Login & Refresh? (Optional, but recommended)", color="cyan"))
+                    print(" If you provide credentials, the app will auto-login and refresh the token on startup.")
+                    setup_login = input(" Provide login details? (y/n): ").strip().lower()
+                    
+                    login_data = None
+                    if setup_login == 'y':
+                        email = input(" Enter APU Email: ").strip()
+                        password = input(" Enter Password: ").strip()
+                        
+                        if email and password:
+                            login_data = {'email': email, 'password': password}
+                            
+                            # Save login details
+                            logins_dir = os.path.join(os.getcwd(), 'Input', 'SavedLogins')
+                            if not os.path.exists(logins_dir):
+                                os.makedirs(logins_dir)
+                                
+                            import json
+                            login_file = os.path.join(logins_dir, f"{os.path.splitext(dest_name)[0]}.json")
+                            try:
+                                with open(login_file, 'w', encoding='utf-8') as f:
+                                    json.dump(login_data, f)
+                                print(ui.font(f" [SUCCESS] Login details saved for {os.path.splitext(dest_name)[0]}.", color="green"))
+                            except Exception as e:
+                                print(ui.font(f" [ERROR] Could not save login details: {e}", color="red"))
+                        else:
+                            print(ui.font(" [!] Missing email or password. Proceeding with manual login.", color="yellow"))
+                            
+                    auto_grab_curl(save_dest=dest_path, login_data=login_data)
+                        
+                elif sub_choice == "2":
                     print(ui.font("\n Opening file browser...", color="green"))
                     root = tk.Tk()
                     root.withdraw()
@@ -409,7 +561,7 @@ def multi_account_menu():
                             print(ui.font(f" [ERROR] {e}", color="red"))
                         time.sleep(1.5)
                         
-                elif sub_choice == "2":
+                elif sub_choice == "3":
                     if not files:
                         print(ui.font(" No accounts to rename.", color="yellow"))
                         time.sleep(1)
@@ -435,26 +587,125 @@ def multi_account_menu():
                         print(" Invalid input.")
                     time.sleep(1)
                     
-                elif sub_choice == "3":
+                elif sub_choice == "4":
                     if not files:
                         print(ui.font(" No accounts to delete.", color="yellow"))
                         time.sleep(1)
                         continue
+                        
+                    print(ui.font("\n Enter account numbers separated by commas (e.g., 1,3,4):", color="yellow"))
+                    print(ui.font(" Or enter a range (e.g., 1-5):", color="yellow"))
+                    print(ui.font(" Or enter 'a' to delete ALL accounts.", color="red"))
+                    selection = input(" Selection: ").strip().lower()
+                    
+                    if not selection:
+                        continue
+                        
+                    selected_indices = set()
+                    
+                    if selection == 'a':
+                        selected_indices = set(range(len(files)))
+                    else:
+                        try:
+                            parts = selection.split(",")
+                            for part in parts:
+                                part = part.strip()
+                                if "-" in part:
+                                    start, end = part.split("-")
+                                    for idx in range(int(start), int(end) + 1):
+                                        if 1 <= idx <= len(files):
+                                            selected_indices.add(idx - 1)
+                                else:
+                                    idx = int(part)
+                                    if 1 <= idx <= len(files):
+                                        selected_indices.add(idx - 1)
+                        except ValueError:
+                            print(ui.font("\n [!] Invalid input format.", color="red"))
+                            time.sleep(1.5)
+                            continue
+                            
+                    if not selected_indices:
+                        print(ui.font("\n [!] No valid accounts selected.", color="red"))
+                        time.sleep(1.5)
+                        continue
+                        
+                    selected_files = [files[i] for i in sorted(selected_indices)]
+                    
+                    print(ui.font("\n Selected Accounts to Delete:", color="red", inverse=True))
+                    for f in selected_files:
+                        print(f"  • {os.path.splitext(f)[0]}")
+                        
+                    confirm = input(f"\n Delete {len(selected_files)} account(s)? (y/n): ").lower()
+                    if confirm == 'y':
+                        deleted_count = 0
+                        for target in selected_files:
+                            try:
+                                os.remove(os.path.join(saved_dir, target))
+                                deleted_count += 1
+                            except Exception as e:
+                                print(ui.font(f" [ERROR] Failed to delete {target}: {e}", color="red"))
+                        print(ui.font(f" [SUCCESS] Deleted {deleted_count} account(s).", color="green"))
+                    else:
+                        print(" Cancelled.")
+                    
+                    time.sleep(1.5)
+                    
+                elif sub_choice == "5":
+                    if not files:
+                        print(ui.font(" No accounts available.", color="yellow"))
+                        time.sleep(1)
+                        continue
+                        
                     try:
-                        idx = int(input(" Enter number to delete: ")) - 1
+                        idx = int(input(" Enter number to manage login details: ")) - 1
                         if 0 <= idx < len(files):
                             target = files[idx]
-                            confirm = input(f" Delete '{os.path.splitext(target)[0]}'? (y/n): ").lower()
-                            if confirm == 'y':
-                                os.remove(os.path.join(saved_dir, target))
-                                print(ui.font(" [SUCCESS] Deleted.", color="green"))
+                            account_name = os.path.splitext(target)[0]
+                            
+                            logins_dir = os.path.join(os.getcwd(), 'Input', 'SavedLogins')
+                            if not os.path.exists(logins_dir):
+                                os.makedirs(logins_dir)
+                                
+                            login_file = os.path.join(logins_dir, f"{account_name}.json")
+                            import json
+                            
+                            if os.path.exists(login_file):
+                                print(ui.font(f"\n Login details exist for {account_name}.", color="green"))
+                                action = input(" Update (u) or Delete (d)?: ").strip().lower()
+                                
+                                if action == 'd':
+                                    os.remove(login_file)
+                                    print(ui.font(" [SUCCESS] Login details deleted.", color="green"))
+                                elif action == 'u':
+                                    email = input(" Enter new APU Email: ").strip()
+                                    password = input(" Enter new Password: ").strip()
+                                    
+                                    if email and password:
+                                        with open(login_file, 'w', encoding='utf-8') as f:
+                                            json.dump({'email': email, 'password': password}, f)
+                                        print(ui.font(" [SUCCESS] Login details updated.", color="green"))
+                                    else:
+                                        print(ui.font(" [!] Invalid input.", color="red"))
                             else:
-                                print(" Cancelled.")
+                                print(ui.font(f"\n No login details found for {account_name}.", color="yellow"))
+                                action = input(" Add login details? (y/n): ").strip().lower()
+                                
+                                if action == 'y':
+                                    email = input(" Enter APU Email: ").strip()
+                                    password = input(" Enter Password: ").strip()
+                                    
+                                    if email and password:
+                                        with open(login_file, 'w', encoding='utf-8') as f:
+                                            json.dump({'email': email, 'password': password}, f)
+                                        print(ui.font(" [SUCCESS] Login details saved.", color="green"))
+                                    else:
+                                        print(ui.font(" [!] Invalid input.", color="red"))
+                                        
                         else:
                             print(" Invalid number.")
                     except ValueError:
                         print(" Invalid input.")
-                    time.sleep(1)
+                    time.sleep(1.5)
                     
                 elif sub_choice == "0":
                     break
