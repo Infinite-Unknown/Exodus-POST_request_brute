@@ -10,14 +10,16 @@ A Python-powered tool for brute-forcing APSpace Attendix OTPs (One-Time Password
 
 | Edition | Description | Download |
 |---------|-------------|----------|
-| **Exodus** | Full menu – all features in one app | [Exodus.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus.exe) |
 | **Exodus Flash** | Quick single-account mode | [Exodus (Flash).exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus%20(Flash).exe) |
 | **Exodus Blitz** | Quick multi-account mode | [Exodus (Blitz).exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus%20(Blitz).exe) |
 | **Exodus User** | Global Attack – join as participant | [ExodusUser.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/ExodusUser.exe) |
 | **Exodus Admin** | Global Attack – admin controller | [ExodusAdmin.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/ExodusAdmin.exe) |
+| **Exodus** | Fallback For Others Failed | [Exodus.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus.exe) |
 
 > [!NOTE]
-> The `ExodusFlash.exe` and `ExodusBlitz.exe` variants without parentheses in the dist folder are older builds. Use the editions listed above for the latest version.
+> The `Exodus (Flash).exe` and `Exodus (Blitz).exe` are the latest edition with simplified everything.
+> If want more control or extra stuff setup in a conda environment `admin.py` then `user.py`.
+> `Exodus.exe` is the oldest stable build for fallback if others failed.
 
 ---
 
