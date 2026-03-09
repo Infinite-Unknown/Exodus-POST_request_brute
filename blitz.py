@@ -1,3 +1,13 @@
+# ================================================= #
+#  Made by Infinite © 2026
+#  GitHub: https://github.com/Infinite-Unknown
+#  Updates: https://github.com/Infinite-Unknown/Exodus-POST_request_brute
+#
+#  Copyright (c) 2026 Infinite. All rights reserved.
+#  Free to copy, edit, and distribute.
+#  Just give credit: https://github.com/Infinite-Unknown
+# ================================================= #
+
 import os
 import time
 import json
@@ -372,6 +382,8 @@ def blitz_menu():
     while True:
         ui.clear()
         print(ui.font("          - Exodus [Blitz] -          \n", color="cyan", inverse=True))
+        print(ui.font(" Made by Infinite | github.com/Infinite-Unknown", color="white", dim=True))
+        print(ui.font(" Updates: github.com/Infinite-Unknown/Exodus-POST_request_brute\n", color="white", dim=True))
         
         # Show account count
         saved_dir = os.path.join(os.getcwd(), 'Input', 'SavedRequests')

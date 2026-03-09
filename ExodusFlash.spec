@@ -44,7 +44,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='ExodusFlash',
+    name='Exodus (Flash)',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
