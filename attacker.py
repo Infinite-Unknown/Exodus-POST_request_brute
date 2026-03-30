@@ -231,8 +231,10 @@ def run_attack_core(target_url, target_headers, num_threads, cooldown, account_n
                                     dest_file = os.path.join(os.getcwd(), 'Input', 'temp.txt')
                                     
                                     if os.path.exists(login_file):
+                                        script_dir = os.path.dirname(os.path.abspath(__file__))
                                         script = f"""
 import sys
+sys.path.insert(0, r'{script_dir}')
 import json
 import traceback
 try:

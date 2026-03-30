@@ -45,6 +45,8 @@ Streamlined multi-account edition. Manage and attack with multiple accounts at o
 ### Exodus User
 Lightweight client for **Global Attack** mode. Register/login to a shared Discord-backed database, bind your cURL config, and participate in coordinated group attacks started by an admin.
 
+Also includes **Sentinel Mode** – an experimental attendance monitor that watches your APSpace attendance page for changes and can auto-launch an attack when new attendance opens.
+
 ### Exodus Admin
 Admin console for **Global Attack** mode. Set up a Discord bot & webhooks, manage registered users and classes, initiate attacks for all opted-in users, and monitor a live status dashboard.
 
@@ -85,6 +87,14 @@ Instead of manual cURL capture, use **Setup cURL (Auto-Grab)**:
 - A Playwright-automated browser opens, you log in, submit any OTP, and the cURL is captured automatically.
 - Supports both manual and fully-automated (headless) login with saved credentials.
 
+### Sentinel Mode (User Edition)
+An experimental attendance monitor:
+1. Select a saved account or enter credentials.
+2. Set a refresh interval (default 60s) and optionally enable auto-attack.
+3. The app logs into APSpace, opens the Attendance page, and watches for changes.
+4. When attendance data changes (new class, percentage shift, etc.), it alerts you with a system beep.
+5. If auto-attack is enabled, it automatically captures a fresh session and launches the brute-force attack.
+
 ---
 
 ## Features
@@ -99,6 +109,7 @@ Instead of manual cURL capture, use **Setup cURL (Auto-Grab)**:
 | Credential storage | ✅ | ✅ | ✅ | — | — |
 | Global Attack (user) | ✅ | — | — | ✅ | — |
 | Global Attack (admin) | ✅ | — | — | — | ✅ |
+| Sentinel Mode (attendance monitor) | — | — | — | ✅ | — |
 | Discord webhook backup | ✅ | — | — | — | — |
 | Live status dashboard | — | — | — | — | ✅ |
 | Discord command control (!start/!stop) | — | — | — | — | ✅ |

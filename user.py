@@ -85,10 +85,11 @@ def user_menu():
             "2. Multi Account Mode",
             "3. Global Attack (Join)",
             "4. Account Backup (Discord)",
-            "5. Exit"
+            "5. Sentinel Mode",
+            "6. Exit"
         ], delay=0.02, symbol="█")
         choice = input("\nInput: ")
-        
+
         if choice == "1":
             menus.single_account_menu()
         elif choice == "2":
@@ -98,6 +99,8 @@ def user_menu():
         elif choice == "4":
             menus.discord_menu()
         elif choice == "5":
+            menus.sentinel_mode()
+        elif choice == "6":
             ui.clear()
             print(ui.font(" ", color="cyan", inverse=True) + " User Session Ended.")
             break

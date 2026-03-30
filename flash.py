@@ -118,8 +118,10 @@ def fast_menu():
                 import subprocess
                 
                 # We use a subprocess to prevent async frame / playwright hanging the main thread
+                script_dir = os.path.dirname(os.path.abspath(__file__))
                 script = f"""
 import sys
+sys.path.insert(0, r'{script_dir}')
 import json
 import traceback
 try:
