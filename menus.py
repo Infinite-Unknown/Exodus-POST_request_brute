@@ -383,22 +383,8 @@ def sentinel_mode():
     # Auto-attack option
     auto_attack = input(" Auto-start attack on change? (y/n, default n): ").strip().lower() == 'y'
 
-    num_threads = 4
+    num_threads = 6
     cooldown = 0.0
-    if auto_attack:
-        try:
-            t_input = input(" Number of threads for attack (default 4): ").strip()
-            num_threads = int(t_input) if t_input else 4
-            if num_threads < 1 or num_threads > 100:
-                num_threads = 4
-        except ValueError:
-            num_threads = 4
-
-        try:
-            c_input = input(" Per-thread cooldown in seconds (default 0): ").strip()
-            cooldown = float(c_input) if c_input else 0.0
-        except ValueError:
-            cooldown = 0.0
 
     # --- Phase 2: Browser launch & login ---
 

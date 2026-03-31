@@ -13,6 +13,7 @@ A Python-powered tool for brute-forcing APSpace Attendix OTPs (One-Time Password
 | **Exodus Flash** | Quick single-account mode | [Exodus (Flash).exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus%20(Flash).exe) |
 | **Exodus Blitz** | Quick multi-account mode | [Exodus (Blitz).exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus%20(Blitz).exe) |
 | **Exodus User** | Global Attack – join as participant | [ExodusUser.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/ExodusUser.exe) |
+| **Exodus Sentinel** | Attendance monitor + auto-attack | [Exodus (Sentinel).exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus%20(Sentinel).exe) |
 | **Exodus Admin** | Global Attack – admin controller | [ExodusAdmin.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/ExodusAdmin.exe) |
 | **Exodus** | Fallback For Others Failed | [Exodus.exe](https://github.com/Infinite-Unknown/Exodus-POST_request_brute/raw/refs/heads/main/dist/Exodus.exe) |
 
@@ -99,20 +100,21 @@ An experimental attendance monitor:
 
 ## Features
 
-| Feature | Full | Flash | Blitz | User | Admin |
-|---------|:----:|:-----:|:-----:|:----:|:-----:|
-| Single-account attack | ✅ | ✅ | — | — | — |
-| Multi-threaded brute-force | ✅ | ✅ | ✅ | — | — |
-| Multi-account attack | ✅ | — | ✅ | — | — |
-| Auto cURL capture (Playwright) | ✅ | ✅ | ✅ | — | — |
-| Auto session refresh | ✅ | ✅ | ✅ | — | — |
-| Credential storage | ✅ | ✅ | ✅ | — | — |
-| Global Attack (user) | ✅ | — | — | ✅ | — |
-| Global Attack (admin) | ✅ | — | — | — | ✅ |
-| Sentinel Mode (attendance monitor) | — | — | — | ✅ | — |
-| Discord webhook backup | ✅ | — | — | — | — |
-| Live status dashboard | — | — | — | — | ✅ |
-| Discord command control (!start/!stop) | — | — | — | — | ✅ |
+| Feature | Full | Flash | Blitz | Sentinel | User | Admin |
+|---------|:----:|:-----:|:-----:|:--------:|:----:|:-----:|
+| Single-account attack | ✅ | ✅ | — | — | — | — |
+| Multi-threaded brute-force | ✅ | ✅ | ✅ | ✅ | — | — |
+| Multi-account attack | ✅ | — | ✅ | — | — | — |
+| Auto cURL capture (Playwright) | ✅ | ✅ | ✅ | ✅ | — | — |
+| Auto session refresh | ✅ | ✅ | ✅ | — | — | — |
+| Credential storage | ✅ | ✅ | ✅ | ✅ | — | — |
+| Attendance monitor | — | — | — | ✅ | ✅ | — |
+| Auto-attack on change | — | — | — | ✅ | ✅ | — |
+| Global Attack (user) | ✅ | — | — | — | ✅ | — |
+| Global Attack (admin) | ✅ | — | — | — | — | ✅ |
+| Discord webhook backup | ✅ | — | — | — | — | — |
+| Live status dashboard | — | — | — | — | — | ✅ |
+| Discord command control (!start/!stop) | — | — | — | — | — | ✅ |
 
 ---
 
@@ -124,6 +126,7 @@ Exodus/
 ├── attacker.py       # OTP brute-force engine (single, multi, global)
 ├── flash.py          # Flash edition entry point (single-account)
 ├── blitz.py          # Blitz edition entry point (multi-account)
+├── sentinel.py       # Sentinel edition entry point (attendance monitor)
 ├── user.py           # User edition entry point (global attack participant)
 ├── admin.py          # Admin edition entry point (global attack controller)
 ├── global_attack.py  # Discord-backed collaborative attack module
