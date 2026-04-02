@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.py$|^d\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''menus.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''menus.py: OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''user.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''user.py: OK''\\)\")",
+      "Bash(pyinstaller ExodusSentinel.spec --distpath dist)",
+      "Bash(ls -la \"C:\\\\Users\\\\jiahe\\\\OneDrive\\\\Desktop\\\\Programming Stuff\\\\Experimental\\\\Exodus\\\\dist\\\\Exodus \\(Sentinel\\).exe\")"
+    ]
+  }
+}
